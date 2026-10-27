@@ -44,3 +44,24 @@ python smoke_and_backfill_hourly.py --only-meter 342856918_sfh
 Output (gitignored): `data/raw/rmp/hourly/<meter_key>/<YYYY-MM-DD>.json`
 
 Meter folders use serial + role labels only (no street address).
+
+## Layer 2 — synthetic housing universe
+
+Household diversity perturbation on the two seed meters:
+
+- size multiplier $\alpha_i \sim \mathrm{LogNormal}(0, 0.25)$
+- schedule phase $\Delta t_i \in \{-2,-1,0,+1,+2\}$ hours
+- appliance flex tags: HVAC + laundry + dishwasher on every home; ~25% of SFH also get an EV charger block
+
+```bash
+# Smoke (15 homes × 7 days)
+python synthesize_housing_universe.py --smoke
+
+# Full Wasatch sample: 3,750 SFH + 1,250 apartments
+python synthesize_housing_universe.py
+
+# After IAM can write S3:
+python synthesize_housing_universe.py --upload-s3 --bucket hard-tech-bucket
+```
+
+Writes gitignored Parquet to `data/processed/housing_universe/`.
