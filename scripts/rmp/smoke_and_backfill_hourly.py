@@ -318,7 +318,8 @@ def set_ending_date(page, day: date) -> None:
         inp.scroll_into_view_if_needed()
         inp.click(force=True, timeout=20000)
         page.wait_for_timeout(250)
-        page.keyboard.press("Meta+a")
+        select_all = "Meta+a" if sys.platform == "darwin" else "Control+a"
+        page.keyboard.press(select_all)
         page.keyboard.press("Backspace")
         page.keyboard.type(date_str, delay=35)
         page.keyboard.press("Tab")
@@ -531,10 +532,12 @@ def main() -> None:
     meters = [m for m in METERS if args.only_meter is None or m["key"] == args.only_meter]
 
     # Never ask for "yesterday" if AMI hasn't published it yet.
+    safe_lag_end = date.today() - timedelta(days=2)
     scraped_max = latest_scraped_day(args.only_meter)
-    end = scraped_max or (date.today() - timedelta(days=2))
     if args.end_date:
-        end = min(end, date.fromisoformat(args.end_date))
+        end = date.fromisoformat(args.end_date)
+    else:
+        end = max(safe_lag_end, scraped_max) if scraped_max else safe_lag_end
     start = date.fromisoformat(args.start_date) if args.start_date else start_date()
     if end < start:
         sys.exit(f"end {end} before start {start}")
