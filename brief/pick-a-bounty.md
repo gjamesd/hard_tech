@@ -9,6 +9,17 @@ AI speeds up building. It doesn't supply judgment — and choosing a bounty, spo
 ## 1. Collect
 
 For every bounty: the brief, the judging rubric, the prize, and any data or APIs provided.
+- Rush Hour For Electrons 
+    - The grid has a rush hour: demand spikes, prices jump, solar fades, most software ignores it
+
+- Build software that knows when the grid is jammed and stays out of traffic 
+    - a navigation app for electricity 
+    - a traffic report for tomorrow's grid 
+    - agents that schedule around clean power 
+
+- How did you manage the grid's congestion?? 
+
+Data: DIA Caiso Ercot Open Meteo Electricity labs 
 
 ## 2. Research
 
