@@ -1,59 +1,41 @@
-# [Hackathon Name] — Working Context
+# Hard Tech Week Hackathon — Working Context
 
-<!-- Fill this in at kickoff. AGENTS.md points here; agents read it before building any feature. -->
+**Event:** Hard Tech Week Hackathon · Oct 26–28, 2026 · Aernata, SLC  
+**Chosen bounty:** Torus · Option 1 — Rush Hour for Electrons · **$5,000**  
+**Judging:** Wed Oct 28, 5–6 PM · creativity, clarity of insight, execution  
+**Research:** `plans/research-bounties.md` · **Plan:** `plans/00-general.md`
 
-**Event:** [name, date, location / online]
-**Format:** [solo / team] · [build time] · [pitch length + Q&A]
-**Prize:** [amount / bounty]
+## Challenge (verbatim spirit)
 
----
+The grid has a rush hour: demand spikes, prices jump, solar fades. Most software ignores it.
 
-## 1. The problem in one paragraph
+Build software that knows when the grid is jammed and stays out of traffic.
 
-## 2. The pitch (one sentence)
+- a navigation app for electricity
+- a traffic report for tomorrow's grid
+- agents that schedule around clean power
 
-## 3. Judging rubric — everything follows from this
+**How would you manage the grid's congestion?**
 
-| Criterion | Weight | How we win it |
-|-----------|--------|---------------|
-|           |        |               |
+## Data (brief + ours)
 
-## 4. Hard requirements
+| Source | Use |
+|--------|-----|
+| EIA | PACE balancing-authority load |
+| Electricity Maps | Carbon / mix for `US-NW-PACE` |
+| Open-Meteo | Weather / solar context (Millcreek) |
+| CAISO / ERCOT | Optional labeled "known jam" markets |
+| RMP Green Button | Real house + casita hourly kWh (vehicle layer) |
 
--
+Free/open data only. Simulated data OK if labeled.
 
-## 5. Data provided
+## Demo path
 
-- Files live in `brief/` or `resources/`
+1. Show tomorrow's grid traffic for PACE / Millcreek (congestion score).
+2. Show main house + casita load; mark flexible vs baseload.
+3. Agent proposes shifted schedule that avoids jammed hours.
+4. One metric: kWh / carbon / congestion exposure moved off the rush hour.
 
-## 6. Scope
+## Cut on purpose
 
-### Must have (demo path)
-
--
-
-### Nice to have
-
--
-
-### Explicitly out of scope
-
--
-
-## 7. Demo script
-
-1.
-2.
-3.
-
-## 8. AI approach
-
-<!-- Where the model sits at the edges (see rules/ai.md): what unstructured input it turns into data, what it explains at the end. Everything else is rules. -->
-
-## 9. Glossary
-
-<!-- Domain terms in plain language. -->
-
-## 10. Open questions
-
--
+SMOTE, floods/schools world-model, power-flow physics, live appliance control, Nucleus dual-track.

@@ -4,10 +4,11 @@
 
 <!-- Replace this section at kickoff. Keep it to a few lines — details live in brief/. -->
 
-**[Product Name]** is an Angular 21+ (standalone components), Angular Material, SCSS application backed by Firebase Cloud Functions (TypeScript) and Firestore, built for **[Hackathon Name]**.
+**Grid Rush (working name)** is an Angular 21+ (standalone components), Angular Material, SCSS application backed by Firebase Cloud Functions (TypeScript) and Firestore, built for **Hard Tech Week / Torus — Rush Hour for Electrons**.
 
 **Key files:**
 - `brief/brief.md` — challenge, judging rubric, required features, demo script. Read it before touching any feature.
+- `plans/research-bounties.md` — sponsor/data/competitors research and bounty pick.
 - `plans/00-general.md` — phases and which one is blocking.
 
 ---
