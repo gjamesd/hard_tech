@@ -129,10 +129,24 @@ def _jam_hours(scored: pd.DataFrame) -> list[int]:
 
 
 def _add_jam_bands(fig: go.Figure, scored: pd.DataFrame, opacity: float = 0.22) -> None:
-    for he in _jam_hours(scored):
+    """Paint jam as contiguous blocks on exact HE ticks (e.g. 18→22), not ±0.5 pads."""
+    hours = _jam_hours(scored)
+    if not hours:
+        return
+    start = hours[0]
+    prev = hours[0]
+    blocks: list[tuple[int, int]] = []
+    for he in hours[1:]:
+        if he == prev + 1:
+            prev = he
+            continue
+        blocks.append((start, prev))
+        start = prev = he
+    blocks.append((start, prev))
+    for lo, hi in blocks:
         fig.add_vrect(
-            x0=he - 0.5,
-            x1=he + 0.5,
+            x0=lo,
+            x1=hi,
             fillcolor=f"rgba(245, 101, 101, {opacity})",
             line_width=0,
             layer="below",
