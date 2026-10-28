@@ -5,6 +5,7 @@ import time
 from datetime import date, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import requests
 
@@ -177,8 +178,6 @@ def synthetic_pace_day(date: str) -> dict[str, pd.DataFrame]:
     Labeled offline PACE proxy when EIA_API_KEY is missing.
     Diurnal shape: solar midday belly, gas/coal evening ramp — not live EIA.
     """
-    import numpy as np
-
     hours = np.arange(1, 25)
     # ~4.2–5.5 GW system shape
     base = 3800 + 400 * np.sin((hours - 6) / 24 * 2 * np.pi)

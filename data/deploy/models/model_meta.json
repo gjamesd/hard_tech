@@ -44,7 +44,7 @@
     ]
   },
   "paths": {
-    "wasatch": "/Users/jamesgriffdgmail.com/Desktop/hard_tech_week/models/wasatch_demand_hgb.pkl",
-    "pace": "/Users/jamesgriffdgmail.com/Desktop/hard_tech_week/models/pace_demand_hgb.pkl"
+    "wasatch": "models/wasatch_demand_hgb.pkl",
+    "pace": "models/pace_demand_hgb.pkl"
   }
 }

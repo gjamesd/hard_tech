@@ -4,16 +4,11 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from .paths import SCALE
-
 
 @dataclass(frozen=True)
 class PlanStep:
     asset: str
     action: str
-    from_he: str = ""
-    to_he: str = ""
-    why: str = ""
 
 
 def _jam_hours(scored: pd.DataFrame) -> list[int]:
@@ -43,7 +38,6 @@ def _jam_label(hours: list[int]) -> str:
 
 
 def _shoulder_label(jam: list[int]) -> str:
-    """Prefer pre-jam afternoon belly; fall back to late night after jam."""
     if jam:
         start = max(12, jam[0] - 4)
         end = max(start, jam[0] - 1)
@@ -59,36 +53,12 @@ def build_agent_plan(
     use_battery: bool = False,
     adoption_pct: float = 0.0,
 ) -> list[PlanStep]:
-    """At most five plain-language takeaways for the agent section."""
     jam_he = _jam_hours(scored)
     jam = _jam_label(jam_he)
     shoulder = _shoulder_label(jam_he)
     steps: list[PlanStep] = []
-    do_flex = bool(use_flex) and float(adoption_pct) > 0
 
-    if float(adoption_pct) <= 0:
-        steps.append(
-            PlanStep(
-                asset="No adoption",
-                action=(
-                    "Adoption 0% — after ≡ baseline (flex / solar / battery off). "
-                    "Raise the slider to enroll SFH + enable flex."
-                ),
-            )
-        )
-        steps.append(
-            PlanStep(
-                asset="How it ships",
-                action=(
-                    f"Publish opt windows to RMP DSM / OEM / VPP opt-in — "
-                    f"utility never remote-controls the breaker. "
-                    f"1 synth home ≈ {SCALE} real meters."
-                ),
-            )
-        )
-        return steps[:5]
-
-    if do_flex:
+    if use_flex:
         steps.append(
             PlanStep(
                 asset="HVAC",
@@ -96,9 +66,6 @@ def build_agent_plan(
                     f"Pre-cool / hold setbacks off {jam} → shift that flex into "
                     f"{shoulder} so the house is out of evening rush."
                 ),
-                from_he=jam,
-                to_he=shoulder,
-                why="Stay out of BA jam hours",
             )
         )
         steps.append(
@@ -106,11 +73,8 @@ def build_agent_plan(
                 asset="EV + laundry / dishwasher",
                 action=(
                     f"Delay EV finish-by and wet appliances past {jam}; "
-                    f"prefer midday belly or after HE23."
+                    "prefer midday belly or after HE23."
                 ),
-                from_he=jam,
-                to_he="midday / after HE23",
-                why="Flexible kWh, not baseload",
             )
         )
 
@@ -133,22 +97,28 @@ def build_agent_plan(
                     f"Store ~2 kWh/home·day surplus at noon; discharge into {jam} "
                     "(and a light HE3–5 top-up). Charge MWh = discharge MWh."
                 ),
-                from_he="midday surplus",
-                to_he=jam,
-                why="Move surplus into jam without inventing energy",
             )
         )
 
-    if do_flex and len(steps) < 5:
+    if use_flex and len(steps) < 5:
         steps.append(
             PlanStep(
                 asset="Renters / apartments",
                 action=(
                     f"~25% of Wasatch can’t hang a kit — same flex windows off {jam}, "
-                    f"milder peak cap so the casita seed (×{SCALE}) doesn’t sync one valley."
+                    "milder peak so apartment load doesn’t sync into one valley."
                 ),
-                from_he=jam,
-                to_he=shoulder,
+            )
+        )
+
+    if not steps:
+        steps.append(
+            PlanStep(
+                asset="Levers off",
+                action=(
+                    "Turn on Appliance + EV flex-shift and/or raise solar adoption "
+                    "to see the agent move load."
+                ),
             )
         )
 

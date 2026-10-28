@@ -84,11 +84,18 @@ def scale_to_wasatch(
     return out
 
 
-def available_dates(housing_dir: Path = HOUSING_LATEST) -> list[str]:
+def available_dates(
+    housing_dir: Path = HOUSING_LATEST,
+    wasatch_dir: Path = WASATCH_DAY_DIR,
+) -> list[str]:
+    all_path = wasatch_dir / "all_days.parquet"
+    if all_path.is_file():
+        df = pd.read_parquet(all_path, columns=["date"])
+        return sorted(str(d) for d in df["date"].unique().tolist())
     dates: set[str] = set()
     for path in list_housing_parts(housing_dir):
         df = pd.read_parquet(path, columns=["date"])
-        dates.update(df["date"].unique().tolist())
+        dates.update(str(d) for d in df["date"].unique().tolist())
     return sorted(dates)
 
 

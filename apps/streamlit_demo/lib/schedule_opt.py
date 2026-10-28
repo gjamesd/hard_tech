@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import linprog
 
 from .flex_shift import (
     APPLIANCES,
@@ -66,23 +67,8 @@ def solve_flex_schedule(
     """
     Minimize congestion-weighted load (+ light CI) subject to:
     energy balance, flex budgets, peak cap, appliance from/to windows.
-    Falls back to heuristic if linprog unavailable or fails.
+    Falls back to heuristic if linprog fails.
     """
-    try:
-        from scipy.optimize import linprog
-    except ImportError:
-        fb = appliance_aware_shift(
-            demand, scored, target_peak_frac=target_peak_frac
-        )
-        fb.metrics["solver"] = "heuristic_fallback"
-        fb.metrics["objective_before"] = fb.metrics.get(
-            "congestion_weighted_before", 0.0
-        )
-        fb.metrics["objective_after"] = fb.metrics.get(
-            "congestion_weighted_after", 0.0
-        )
-        return OptResult(hourly=fb.hourly, metrics=fb.metrics, solver="heuristic_fallback")
-
     df = demand.merge(
         scored[
             [

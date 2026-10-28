@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date as date_cls
 from pathlib import Path
 
 import joblib
@@ -13,7 +14,6 @@ from .open_meteo import (
     fetch_millcreek_forecast,
     fetch_millcreek_range,
     load_or_fetch_weather,
-    tomorrow_date_denver,
 )
 from .paths import (
     GRID_CACHE_DIR,
@@ -299,9 +299,6 @@ def predict_day(
         p_hist = w_hist.copy()
         p_hist["target"] = p_hist["target"] * 3.5  # weak fallback; labeled upstream
 
-    # Prefer archive for historical targets; forecast API for today/future
-    from datetime import date as date_cls
-
     if use_forecast_weather is None:
         use_forecast_weather = date >= date_cls.today().isoformat()
     wx = _weather_for_target(date, prefer_forecast_api=bool(use_forecast_weather))
@@ -315,8 +312,3 @@ def predict_day(
         "pace": _recursive_predict(p_model, p_hist, wx, date),
         "weather": wx,
     }
-
-
-def predict_tomorrow() -> dict[str, pd.DataFrame | str | int]:
-    d = tomorrow_date_denver()
-    return predict_day(d, use_forecast_weather=True)

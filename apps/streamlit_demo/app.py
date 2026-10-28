@@ -51,7 +51,7 @@ st.set_page_config(
     page_title="Wasatch Grid Traffic",
     page_icon="⚡",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
 st.markdown(
@@ -235,7 +235,7 @@ def main() -> None:
         st.session_state.demo_day = max_d
 
     st.markdown("**Demo day**")
-    hero_cols = st.columns(len(HERO_DATES) + 1)
+    hero_cols = st.columns(len(HERO_DATES))
     for i, hero in enumerate(HERO_DATES):
         label = HERO_LABELS.get(hero, hero)
         disabled = hero not in dates
@@ -270,7 +270,7 @@ def main() -> None:
     use_flex = st.sidebar.checkbox(
         "Appliance + EV flex-shift",
         value=True,
-        help="Primary congestion lever — retime flexible load.",
+        help="Primary congestion lever — retime flexible load (works at 0% solar).",
     )
     adoption = st.sidebar.slider(
         "Plug-in solar adoption % (SFH only)",
@@ -284,7 +284,7 @@ def main() -> None:
         == "With battery"
     )
     st.sidebar.caption(
-        "Adoption **0%** ⇒ after ≡ baseline. Solar/battery = **SFH only**. "
+        "Flex works with solar at **0%**. Solar/battery = SFH only. "
         "Agent **proposes** windows — no live RMP control."
     )
 
@@ -358,10 +358,38 @@ def main() -> None:
         fuel_g = grid.get("pace_fuel") if grid else None
         if isinstance(fuel_g, pd.DataFrame) and not fuel_g.empty:
             fuel = fuel_g
-    meta = {"grid_ok": has_eia_demand, "grid_source": pace_source or "missing"}
+
+    pace_demand = pace_eia if has_eia_demand else pd.DataFrame()
+    pace_forecast_used = False
+    if not has_eia_demand:
+        pace_hat = forecast_bundle.get("pace")
+        if (
+            isinstance(pace_hat, pd.DataFrame)
+            and not pace_hat.empty
+            and "mw_hat" in pace_hat.columns
+        ):
+            pace_demand = pace_hat.rename(columns={"mw_hat": "demand_mw"}).copy()
+            pace_demand["date"] = date_s
+            pace_forecast_used = True
+
+    has_ba_demand = (
+        isinstance(pace_demand, pd.DataFrame)
+        and not pace_demand.empty
+        and "demand_mw" in pace_demand.columns
+    )
+    meta = {
+        "grid_ok": has_eia_demand,
+        "grid_source": (
+            "eia"
+            if has_eia_demand
+            else ("hgb_pace_forecast" if pace_forecast_used else pace_source or "missing")
+        ),
+    }
     scored = (
-        congestion_score_v0(pace_eia, fuel if not fuel.empty else None)
-        if has_eia_demand
+        congestion_score_v0(
+            pace_demand, fuel if not fuel.empty else None
+        )
+        if has_ba_demand
         else pd.DataFrame()
     )
 
@@ -382,26 +410,33 @@ def main() -> None:
     jam_txt = ", ".join(f"HE{h}" for h in jam_list) if jam_list else "—"
 
     # --- §1 Traffic ---
-    st.subheader("1 · EIA BA traffic — when the grid is jammed")
+    st.subheader("1 · BA traffic — when the grid is jammed")
     st.caption(
         "Score = 0.5·within-day demand rank + 0.3·dirty-mix rank + 0.2·evening flag. "
-        "Jam = top scores inside HE16–22. Labeled BA stress — not LMP / power-flow congestion."
+        "Jam = top scores inside HE16–22. Labeled BA stress — not LMP congestion."
     )
-    if pace_source == "synthetic_pace_proxy":
-        st.warning("Refusing synthetic BA load for jam scoring — need cached or live EIA.")
-    if not has_eia_demand:
+    if not has_ba_demand:
         st.error(
-            "No EIA demand for this day — refusing to invent BA load. "
+            "No BA demand for this day (EIA cache miss and PACE forecast unavailable). "
             + (pace_pack.get("error") or f"source={pace_source or 'missing'}")
         )
     else:
+        if pace_forecast_used:
+            st.info(
+                f"**Labeled HGB day-ahead PACE forecast** for {date_s} "
+                "(no EIA actual published for this day). Not live EIA-930."
+            )
         fig_e = go.Figure()
         _add_jam_bands(fig_e, scored, 0.22)
         fig_e.add_trace(
             go.Scatter(
-                x=pace_eia["hour_ending"],
-                y=pace_eia["demand_mw"],
-                name="EIA BA demand",
+                x=pace_demand["hour_ending"],
+                y=pace_demand["demand_mw"],
+                name=(
+                    "PACE HGB forecast"
+                    if pace_forecast_used
+                    else "EIA BA demand"
+                ),
                 line=dict(color="#c53030", width=3),
             )
         )
@@ -409,14 +444,17 @@ def main() -> None:
             height=280,
             margin=dict(l=10, r=10, t=10, b=10),
             xaxis_title="Hour ending (America/Denver)",
-            yaxis_title="EIA MW",
+            yaxis_title="MW",
             legend=dict(orientation="h", y=1.12),
         )
         st.plotly_chart(fig_e, use_container_width=True)
-        eia_peak = float(pace_eia["demand_mw"].max())
-        eia_peak_he = int(pace_eia.loc[pace_eia["demand_mw"].idxmax(), "hour_ending"])
+        ba_peak = float(pace_demand["demand_mw"].max())
+        ba_peak_he = int(
+            pace_demand.loc[pace_demand["demand_mw"].idxmax(), "hour_ending"]
+        )
+        src_lbl = "Forecast" if pace_forecast_used else "EIA"
         st.caption(
-            f"EIA peak **{eia_peak:.0f} MW** at HE{eia_peak_he}. "
+            f"{src_lbl} peak **{ba_peak:.0f} MW** at HE{ba_peak_he}. "
             f"Red bands = evening jam: **{jam_txt}**."
         )
 
@@ -493,10 +531,7 @@ def main() -> None:
                 showlegend=False,
             )
             st.plotly_chart(fig_s, use_container_width=True)
-            st.caption(
-                f"Red bands = evening jam ({jam_txt}). "
-                "BA-level EIA traffic — not rewritten by home solar."
-            )
+            st.caption(f"Red bands = evening jam ({jam_txt}).")
 
     # Headline strip
     st.markdown(
@@ -520,52 +555,6 @@ def main() -> None:
         help="Drop in congestion-weighted MWh·score",
     )
 
-    if not scored.empty and not relief.hourly.empty:
-        st.markdown("**Fleet congestion exposure** (Wasatch MW × BA score)")
-        exp = relief.hourly.merge(
-            scored[["hour_ending", "congestion_score"]],
-            on="hour_ending",
-            how="left",
-        ).sort_values("hour_ending")
-        c = exp["congestion_score"].fillna(0.5).to_numpy(dtype=float)
-        exp_before = exp["wasatch_mw_baseline"].to_numpy(dtype=float) * c
-        exp_after = exp["wasatch_mw_after"].to_numpy(dtype=float) * c
-        sum_b, sum_a = float(exp_before.sum()), float(exp_after.sum())
-        e1, e2, e3 = st.columns(3)
-        e1.metric("Exposure before", f"{sum_b:.0f}", help="Σ baseline MW × score")
-        e2.metric("Exposure after", f"{sum_a:.0f}", help="Σ after-agent MW × score")
-        e3.metric("Exposure cut", f"{sum_b - sum_a:.0f}")
-        fig_exp = go.Figure()
-        _add_jam_bands(fig_exp, scored, 0.18)
-        fig_exp.add_trace(
-            go.Scatter(
-                x=exp["hour_ending"],
-                y=exp_before,
-                name="Before (baseline × score)",
-                line=dict(color="#2b6cb0", width=3),
-            )
-        )
-        fig_exp.add_trace(
-            go.Scatter(
-                x=exp["hour_ending"],
-                y=exp_after,
-                name="After agent (load × score)",
-                line=dict(color="#38a169", width=3),
-            )
-        )
-        fig_exp.update_layout(
-            height=280,
-            margin=dict(l=8, r=8, t=8, b=8),
-            legend=dict(orientation="h", y=1.12),
-            xaxis_title="Hour ending",
-            yaxis_title="MW × score",
-        )
-        st.plotly_chart(fig_exp, use_container_width=True)
-        st.caption(
-            "Green below blue = stayed out of traffic "
-            "(less fleet MW on high-score hours)."
-        )
-
     # --- §2 Agent ---
     st.subheader("2 · Agent schedule (proposal)")
     st.caption(
@@ -584,7 +573,7 @@ def main() -> None:
         for step in plan:
             st.markdown(f"- **{step.asset}:** {step.action}")
 
-    d1, d2, d3, d4 = st.columns(4)
+    d1, d2, d3 = st.columns(3)
     d1.metric("Flex shifted", f"{metrics.get('mwh_shifted_total', 0):.0f} MWh")
     d2.metric(
         "Battery charge / discharge",
@@ -595,14 +584,6 @@ def main() -> None:
         "Solar live / surplus",
         f"{metrics.get('solar_live_mwh', metrics.get('solar_to_load_mwh', 0)):.0f} / "
         f"{metrics.get('surplus_mwh', 0):.0f}",
-    )
-    d4.metric(
-        "Solver",
-        str(metrics.get("solver", "—")),
-        help=(
-            f"Objective {metrics.get('objective_before', 0):.0f} → "
-            f"{metrics.get('objective_after', 0):.0f}"
-        ),
     )
     if metrics.get("new_peak_created"):
         st.warning(
@@ -730,6 +711,52 @@ def main() -> None:
         "Yellow/purple = battery surplus only (equal MWh)."
     )
 
+    if not scored.empty and not relief.hourly.empty:
+        st.markdown("**Fleet congestion exposure** (Wasatch MW × BA score)")
+        exp = relief.hourly.merge(
+            scored[["hour_ending", "congestion_score"]],
+            on="hour_ending",
+            how="left",
+        ).sort_values("hour_ending")
+        c = exp["congestion_score"].fillna(0.5).to_numpy(dtype=float)
+        exp_before = exp["wasatch_mw_baseline"].to_numpy(dtype=float) * c
+        exp_after = exp["wasatch_mw_after"].to_numpy(dtype=float) * c
+        sum_b, sum_a = float(exp_before.sum()), float(exp_after.sum())
+        e1, e2, e3 = st.columns(3)
+        e1.metric("Exposure before", f"{sum_b:.0f}", help="Σ baseline MW × score")
+        e2.metric("Exposure after", f"{sum_a:.0f}", help="Σ after-agent MW × score")
+        e3.metric("Exposure cut", f"{sum_b - sum_a:.0f}")
+        fig_exp = go.Figure()
+        _add_jam_bands(fig_exp, scored, 0.18)
+        fig_exp.add_trace(
+            go.Scatter(
+                x=exp["hour_ending"],
+                y=exp_before,
+                name="Before (baseline × score)",
+                line=dict(color="#2b6cb0", width=3),
+            )
+        )
+        fig_exp.add_trace(
+            go.Scatter(
+                x=exp["hour_ending"],
+                y=exp_after,
+                name="After agent (load × score)",
+                line=dict(color="#38a169", width=3),
+            )
+        )
+        fig_exp.update_layout(
+            height=280,
+            margin=dict(l=8, r=8, t=8, b=8),
+            legend=dict(orientation="h", y=1.12),
+            xaxis_title="Hour ending",
+            yaxis_title="MW × score",
+        )
+        st.plotly_chart(fig_exp, use_container_width=True)
+        st.caption(
+            "Green below blue = stayed out of traffic "
+            "(less fleet MW on high-score hours)."
+        )
+
     # --- §3 Meters ---
     st.subheader("3 · Your meters (Millcreek)")
     st.caption(
@@ -812,10 +839,14 @@ def main() -> None:
     if MODEL_META_PATH.is_file():
         meta_m = json.loads(MODEL_META_PATH.read_text())
         if "wasatch" in meta_m:
-            st.caption(
-                f"Wasatch train holdout MAE: **{meta_m['wasatch']['mae_mw']:.0f} MW** "
-                f"(holdout {meta_m['wasatch'].get('holdout_end', '—')})."
-            )
+            holdout = meta_m["wasatch"].get("holdout_date") or meta_m[
+                "wasatch"
+            ].get("holdout_end", "—")
+            with st.expander("Model holdout", expanded=False):
+                st.caption(
+                    f"Wasatch holdout MAE **{meta_m['wasatch']['mae_mw']:.0f} MW** "
+                    f"({holdout})."
+                )
 
     with st.expander("How we know Wasatch isn’t inventing MW (gut-check)", expanded=False):
         _w_peak = float(wasatch_hat["wasatch_mw"].max())

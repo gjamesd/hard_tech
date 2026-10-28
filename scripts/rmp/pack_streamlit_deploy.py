@@ -24,19 +24,6 @@ def _copy_file(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
-def _copy_tree_files(src: Path, dst: Path, pattern: str = "**/*") -> int:
-    n = 0
-    if not src.is_dir():
-        return 0
-    for path in src.glob(pattern):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(src)
-        _copy_file(path, dst / rel)
-        n += 1
-    return n
-
-
 def main() -> int:
     if not (WASATCH_SRC / "all_days.parquet").is_file():
         print("Missing wasatch all_days.parquet — run aggregate_wasatch_day.py", file=sys.stderr)

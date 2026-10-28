@@ -125,17 +125,26 @@ def propose_house_shift(
     donors = [i for i, h in enumerate(hours) if h in jam_hours and flex[i] > 1e-6]
     receivers = [i for i, h in enumerate(hours) if h not in jam_hours]
     receivers.sort(key=lambda i: kwh[i])
+    n_recv = max(len(receivers), 1)
     for di in donors:
         rem = float(flex[di])
+        if rem <= 1e-6 or not receivers:
+            continue
+        share = rem / n_recv
         for ri in receivers:
             if rem <= 1e-6:
                 break
-            take = min(rem, rem / max(len(receivers), 1))
+            take = min(rem, share)
             kwh[di] -= take
             flex[di] -= take
             kwh[ri] += take
             flex[ri] += take
             rem -= take
+        if rem > 1e-6:
+            kwh[receivers[0]] += rem
+            flex[receivers[0]] += rem
+            kwh[di] -= rem
+            flex[di] -= rem
     out["kwh_after"] = kwh
     out["flexible_kwh_after"] = flex
     out["baseload_kwh_after"] = np.maximum(kwh - flex, 0.0)

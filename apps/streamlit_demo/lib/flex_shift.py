@@ -6,11 +6,11 @@ import numpy as np
 import pandas as pd
 
 HVAC_FROM = set(range(18, 23))
-HVAC_TO = set(list(range(23, 25)) + list(range(1, 3)))
+HVAC_TO = set(range(14, 18))
 EV_FROM = set(range(18, 23))
-EV_TO = set(list(range(1, 3)) + list(range(23, 25)))
+EV_TO = set(range(11, 16)) | set(range(23, 25)) | set(range(1, 6))
 DW_LAUNDRY_FROM = set(range(18, 23))
-DW_LAUNDRY_TO = set(list(range(23, 25)) + list(range(1, 3)))
+DW_LAUNDRY_TO = set(range(11, 16)) | set(range(23, 25)) | set(range(1, 3))
 
 APPLIANCES = (
     ("hvac", "wasatch_flex_hvac_mw", HVAC_FROM, HVAC_TO),

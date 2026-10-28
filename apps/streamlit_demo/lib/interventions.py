@@ -186,6 +186,16 @@ def _ensure_evening_flex(frame: pd.DataFrame, flex_frac: float = 0.16) -> pd.Dat
     return out
 
 
+def _rush_hours(scored: pd.DataFrame) -> set[int]:
+    if not scored.empty and "is_jam" in scored.columns:
+        jam = set(
+            scored.loc[scored["is_jam"], "hour_ending"].astype(int).tolist()
+        )
+        if jam:
+            return jam
+    return set(JAM_HOURS)
+
+
 def apply_relief_stack(
     demand: pd.DataFrame,
     weather: pd.DataFrame,
@@ -198,15 +208,17 @@ def apply_relief_stack(
     """
     Split 75% SFH / 25% apt.
     Order: flex stagger → SFH solar offsets grid → battery (jam-heavy, HE3–5 slice).
-    Apt: flex only (no solar/battery). Solar is never undone by later flex.
-    adoption_pct == 0 ⇒ identity (no flex / solar / battery).
+    Apt: flex only (no solar/battery). Flex is independent of solar adoption.
     """
     df = demand.sort_values("hour_ending").reset_index(drop=True).copy()
     hours = df["hour_ending"].to_numpy()
     baseline = df["wasatch_mw"].to_numpy(dtype=float).copy()
-    do_flex = bool(use_flex) and float(adoption_pct) > 0
+    do_flex = bool(use_flex)
+    do_solar = float(adoption_pct) > 0
+    do_battery = bool(use_battery) and do_solar
+    rush = _rush_hours(scored)
 
-    if float(adoption_pct) <= 0:
+    if not do_flex and not do_solar:
         hourly = pd.DataFrame(
             {
                 "hour_ending": hours,
@@ -224,7 +236,7 @@ def apply_relief_stack(
         )
         if "date" in df.columns:
             hourly["date"] = df["date"].to_numpy()
-        evening = hourly["hour_ending"].isin(list(JAM_HOURS))
+        evening = hourly["hour_ending"].isin(list(rush))
         evening_mwh = float(hourly.loc[evening, "wasatch_mw_baseline"].sum())
         peak = float(baseline.max())
         peak_he = int(hours[int(np.argmax(baseline))]) if len(hours) else 0
@@ -247,8 +259,8 @@ def apply_relief_stack(
                 "objective_before": 0.0,
                 "objective_after": 0.0,
                 "objective_delta": 0.0,
-                "solver": "identity_zero_adoption",
-                "opt_formulation": "adoption_pct=0 → after ≡ baseline",
+                "solver": "identity",
+                "opt_formulation": "flex off + adoption 0 → after ≡ baseline",
                 "adoption_pct": adoption_pct,
                 "use_battery": use_battery,
                 "use_flex": False,
@@ -337,30 +349,34 @@ def apply_relief_stack(
         flex_apt = opt_a.metrics
 
     # --- 2) SFH solar: adopting homes serve load from the panel, not the grid ---
-    solar = (
-        plug_in_solar_mw(wx, adoption_pct, n_homes=sfh_homes)
-        .reindex(hours)
-        .fillna(0.0)
-        .to_numpy()
-    )
+    solar = np.zeros_like(sfh_flexed)
     discharge = np.zeros_like(sfh_flexed)
     charge_mw = np.zeros_like(sfh_flexed)
     adopt_frac = max(float(adoption_pct), 0.0) / 100.0
-    # Without battery: same live/surplus split; surplus bleeds to RMP free
     solar_to_load = np.zeros_like(sfh_flexed)
-    for i, h in enumerate(hours):
-        gen = float(solar[i])
-        if gen <= 1e-12:
-            continue
-        coin = DAYTIME_COINCIDENCE if int(h) in CHARGE_HOURS else 1.0
-        adopting_load = max(float(sfh_flexed[i]) * adopt_frac * coin, 0.0)
-        solar_to_load[i] = min(gen, adopting_load)
-    surplus_mwh = float(np.maximum(solar - solar_to_load, 0.0).sum())
-    live_mwh = float(solar_to_load.sum())
+    surplus_mwh = 0.0
+    live_mwh = 0.0
     batt_jam = 0.0
     batt_morning = 0.0
 
-    if use_battery and adoption_pct > 0:
+    if do_solar:
+        solar = (
+            plug_in_solar_mw(wx, adoption_pct, n_homes=sfh_homes)
+            .reindex(hours)
+            .fillna(0.0)
+            .to_numpy()
+        )
+        for i, h in enumerate(hours):
+            gen = float(solar[i])
+            if gen <= 1e-12:
+                continue
+            coin = DAYTIME_COINCIDENCE if int(h) in CHARGE_HOURS else 1.0
+            adopting_load = max(float(sfh_flexed[i]) * adopt_frac * coin, 0.0)
+            solar_to_load[i] = min(gen, adopting_load)
+        surplus_mwh = float(np.maximum(solar - solar_to_load, 0.0).sum())
+        live_mwh = float(solar_to_load.sum())
+
+    if do_battery:
         (
             sfh_after,
             solar_to_load,
@@ -381,12 +397,7 @@ def apply_relief_stack(
     before_peak = float(baseline.max())
     after_peak = float(after.max())
     after_peak_he = int(hours[int(np.argmax(after))])
-
-    jam_hours = set(range(18, 23))
-    if not scored.empty and "is_jam" in scored.columns:
-        jam_hours = set(
-            scored.loc[scored["is_jam"], "hour_ending"].astype(int).tolist()
-        ) or jam_hours
+    jam_hours = rush
 
     hourly = pd.DataFrame(
         {
@@ -406,7 +417,7 @@ def apply_relief_stack(
     if "date" in df.columns:
         hourly["date"] = df["date"].to_numpy()
 
-    evening = hourly["hour_ending"].isin(list(JAM_HOURS))
+    evening = hourly["hour_ending"].isin(list(rush))
     evening_before = float(hourly.loc[evening, "wasatch_mw_baseline"].sum())
     evening_after = float(hourly.loc[evening, "wasatch_mw_after"].sum())
 
