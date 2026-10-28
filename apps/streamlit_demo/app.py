@@ -429,46 +429,8 @@ def main() -> None:
     jam_cut_pct = (
         100.0 * evening_off / evening_before if evening_before > 1e-9 else 0.0
     )
-    st.subheader("1 · Metrics")
-    st.markdown(
-        f"""
-        <div class="headline-box">
-          <strong>How we manage congestion:</strong>
-          retime residential flex out of the rush into cleaner hours.
-          Jam tonight: <strong>{jam_txt}</strong> ·
-          evening MWh off rush:
-          <strong>{evening_off:.0f}</strong>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    h1, h2, h3 = st.columns(3)
-    h1.metric("Evening MWh off rush", f"{evening_off:.0f}")
-    h2.metric(
-        "Jam-hour demand cut",
-        f"{jam_cut_pct:.0f}%",
-        help="Share of Wasatch MWh removed inside BA jam hours, not daily max MW.",
-    )
-    h3.metric(
-        "Congestion avoided",
-        f"{metrics.get('congestion_avoided', 0):.0f}",
-        help="Drop in congestion-weighted MWh·score",
-    )
-    d1, d2, d3 = st.columns(3)
-    d1.metric("Flex shifted", f"{metrics.get('mwh_shifted_total', 0):.0f} MWh")
-    d2.metric(
-        "Battery charge / discharge",
-        f"{metrics.get('battery_mwh_charged', 0):.0f} / "
-        f"{metrics.get('battery_mwh_discharged', 0):.0f}",
-    )
-    d3.metric(
-        "Solar live / batt-PV",
-        f"{metrics.get('solar_live_mwh', metrics.get('solar_to_load_mwh', 0)):.0f} / "
-        f"{metrics.get('battery_direct_mwh', 0):.0f}",
-    )
-
-    # --- §2 Wasatch day-ahead ---
-    st.subheader("2 · Wasatch day-ahead prediction")
+    # --- §1 Wasatch day-ahead ---
+    st.subheader("1 · Wasatch day-ahead prediction")
     st.caption(
         f"HGB on lagged Wasatch MW (1h…1 week) + Millcreek weather. "
         f"Trained through **{hist_end}** ({n_hist} prior days)."
@@ -517,8 +479,8 @@ def main() -> None:
     )
     st.plotly_chart(fig_pred, use_container_width=True)
 
-    # --- §3 Scale / gut-check ---
-    st.subheader("3 · Scale check (gut-check)")
+    # --- §2 Scale / gut-check ---
+    st.subheader("2 · Scale check (gut-check)")
     if MODEL_META_PATH.is_file():
         meta_m = json.loads(MODEL_META_PATH.read_text())
         if "wasatch" in meta_m:
@@ -527,7 +489,7 @@ def main() -> None:
             ].get("holdout_end", "—")
             st.caption(
                 f"Wasatch holdout MAE **{meta_m['wasatch']['mae_mw']:.0f} MW** "
-                f"({holdout}). Day-ahead curve is in §2."
+                f"({holdout}). Day-ahead curve is in §1."
             )
 
     with st.expander("How we know Wasatch isn’t inventing MW (gut-check)", expanded=True):
@@ -609,8 +571,8 @@ def main() -> None:
                     "Gut-check **Review** — share outside soft band "
                     "(energy 20–32%, peak 18–45%); still usable if labeled."
                 )
-    # --- §4 Agent ---
-    st.subheader("4 · Agent schedule + solar")
+    # --- §3 Agent ---
+    st.subheader("3 · Agent schedule + solar")
     st.caption(
         "Proposal only — no live RMP / device control. "
         "BA jam is the map; exposure drop is the proof."
@@ -807,6 +769,44 @@ def main() -> None:
             "Green below blue = stayed out of traffic "
             "(less fleet MW on high-score hours)."
         )
+
+    st.subheader("4 · Impact metrics")
+    st.markdown(
+        f"""
+        <div class="headline-box">
+          <strong>How we manage congestion:</strong>
+          retime residential flex out of the rush into cleaner hours.
+          Jam tonight: <strong>{jam_txt}</strong> ·
+          evening MWh off rush:
+          <strong>{evening_off:.0f}</strong>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    h1, h2, h3 = st.columns(3)
+    h1.metric("Evening MWh off rush", f"{evening_off:.0f}")
+    h2.metric(
+        "Jam-hour demand cut",
+        f"{jam_cut_pct:.0f}%",
+        help="Share of Wasatch MWh removed inside BA jam hours, not daily max MW.",
+    )
+    h3.metric(
+        "Congestion avoided",
+        f"{metrics.get('congestion_avoided', 0):.0f}",
+        help="Drop in congestion-weighted MWh·score",
+    )
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Flex shifted", f"{metrics.get('mwh_shifted_total', 0):.0f} MWh")
+    d2.metric(
+        "Battery charge / discharge",
+        f"{metrics.get('battery_mwh_charged', 0):.0f} / "
+        f"{metrics.get('battery_mwh_discharged', 0):.0f}",
+    )
+    d3.metric(
+        "Solar live / batt-PV",
+        f"{metrics.get('solar_live_mwh', metrics.get('solar_to_load_mwh', 0)):.0f} / "
+        f"{metrics.get('battery_direct_mwh', 0):.0f}",
+    )
 
     # --- Supporting: BA traffic (below the main 1–4 path) ---
     with st.expander("BA traffic — when the grid is jammed", expanded=False):
