@@ -224,20 +224,26 @@ def main() -> None:
         f"({len(dates)} days). "
         f"Earliest selectable day is **{min_d.isoformat()}** "
         f"(needs ≥{min_history_days} prior days for lag features). "
-        f"Latest is **{max_d.isoformat()}** (one day past the sample — labeled forecast when EIA isn’t cached)."
+        f"Latest is **{max_d.isoformat()}** (day-ahead HGB forecast past the sample)."
     )
-    hero_cols = st.columns(len(HERO_DATES))
-    for i, hero in enumerate(HERO_DATES):
-        label = HERO_LABELS.get(hero, hero)
-        disabled = hero not in dates
+
+    def _set_demo_day(d: date_cls) -> None:
+        st.session_state.demo_day = d
+        st.session_state.date_picker = d
+
+    hero_labels = [
+        *[(HERO_LABELS.get(h, h), pd.to_datetime(h).date()) for h in HERO_DATES],
+        ("Tomorrow forecast", max_d),
+    ]
+    hero_cols = st.columns(len(hero_labels))
+    for i, (label, day_v) in enumerate(hero_labels):
         with hero_cols[i]:
             if st.button(
-                f"{label}\n{hero}",
-                key=f"hero_{hero}",
-                disabled=disabled,
+                f"{label}\n{day_v.isoformat()}",
+                key=f"hero_{day_v.isoformat()}",
                 use_container_width=True,
             ):
-                st.session_state.demo_day = pd.to_datetime(hero).date()
+                _set_demo_day(day_v)
                 st.rerun()
 
     date = st.date_input(
@@ -252,8 +258,7 @@ def main() -> None:
         ),
         key="date_picker",
     )
-    if date != st.session_state.demo_day:
-        st.session_state.demo_day = date
+    st.session_state.demo_day = date
     date_s = date.isoformat()
 
     st.sidebar.header("Agent levers")
@@ -292,9 +297,8 @@ def main() -> None:
     hist_end = forecast_bundle.get("history_end", "?")
     n_hist = forecast_bundle.get("n_history_days", 0)
     st.caption(
-        f"Predicted **{date_s}** using all history through **{hist_end}** "
-        f"({n_hist} prior days) + Open-Meteo Millcreek weather. "
-        "Models need those prior days for lags (hour/day/week)."
+        f"HGB day-ahead for **{date_s}** from history through **{hist_end}** "
+        f"({n_hist} prior days: lags through 1 week + Open-Meteo Millcreek weather)."
     )
     if isinstance(n_hist, int) and n_hist < min_history_days:
         st.warning(
@@ -339,6 +343,51 @@ def main() -> None:
                 wasatch_hat[col] = (
                     wasatch_hat["wasatch_mw"] * share.clip(0, 0.95)
                 ).to_numpy()
+
+    # --- Predicted Wasatch (always first — this is the day-ahead model) ---
+    st.subheader("0 · Wasatch day-ahead prediction")
+    st.caption(
+        "HistGradientBoosting on lagged Wasatch MW (1h…1 week) + Millcreek weather. "
+        "This is the residential forecast — not EIA."
+    )
+    fig_pred = go.Figure()
+    fig_pred.add_trace(
+        go.Scatter(
+            x=wasatch_hat["hour_ending"],
+            y=wasatch_hat["wasatch_mw"],
+            name="Wasatch predicted (HGB)",
+            line=dict(color="#2b6cb0", width=3),
+        )
+    )
+    if show_actuals and not actual.empty:
+        fig_pred.add_trace(
+            go.Scatter(
+                x=actual["hour_ending"],
+                y=actual["wasatch_mw"],
+                name="Wasatch proxy actual (scaled synth)",
+                line=dict(color="#2b6cb0", width=2, dash="dot"),
+            )
+        )
+        mae = float(
+            np.abs(
+                wasatch_hat.sort_values("hour_ending")["wasatch_mw"].to_numpy()
+                - actual.sort_values("hour_ending")["wasatch_mw"].to_numpy()
+            ).mean()
+        )
+        st.caption(f"Predicted vs on-disk proxy MAE: **{mae:.0f} MW**")
+    elif actual.empty:
+        st.caption(
+            f"No on-disk Wasatch actual for **{date_s}** — showing model forecast only "
+            "(typical for the day-after-sample / tomorrow button)."
+        )
+    fig_pred.update_layout(
+        height=300,
+        margin=dict(l=10, r=10, t=10, b=10),
+        legend=dict(orientation="h", y=1.12),
+        xaxis_title="Hour ending",
+        yaxis_title="Wasatch MW",
+    )
+    st.plotly_chart(fig_pred, use_container_width=True)
 
     pace_pack = _pace_eia(date_s)
     pace_eia = pace_pack["demand"]
@@ -435,11 +484,27 @@ def main() -> None:
                 name=(
                     "PACE HGB forecast"
                     if pace_forecast_used
-                    else "EIA BA demand"
+                    else "EIA BA demand (actual)"
                 ),
                 line=dict(color="#c53030", width=3),
             )
         )
+        # When we have EIA actuals, also overlay the day-ahead PACE HGB prediction
+        pace_hat_overlay = forecast_bundle.get("pace")
+        if (
+            has_eia_demand
+            and isinstance(pace_hat_overlay, pd.DataFrame)
+            and not pace_hat_overlay.empty
+            and "mw_hat" in pace_hat_overlay.columns
+        ):
+            fig_e.add_trace(
+                go.Scatter(
+                    x=pace_hat_overlay["hour_ending"],
+                    y=pace_hat_overlay["mw_hat"],
+                    name="PACE HGB day-ahead (model)",
+                    line=dict(color="#c53030", width=2, dash="dot"),
+                )
+            )
         fig_e.update_layout(
             height=280,
             margin=dict(l=10, r=10, t=10, b=10),
@@ -800,58 +865,18 @@ def main() -> None:
                 use_container_width=True,
             )
 
-    # --- §4 Wasatch detail ---
-    st.subheader("4 · Wasatch residential proxy")
-    st.caption(
-        "Constructed from RMP seed meters → 5k synth homes × scale. **Not** EIA."
-    )
-    fig_f = go.Figure()
-    _add_jam_bands(fig_f, scored, 0.22)
-    fig_f.add_trace(
-        go.Scatter(
-            x=wasatch_hat["hour_ending"],
-            y=wasatch_hat["wasatch_mw"],
-            name="Wasatch predicted",
-            line=dict(color="#2b6cb0", width=3),
-        )
-    )
-    if show_actuals and not actual.empty:
-        fig_f.add_trace(
-            go.Scatter(
-                x=actual["hour_ending"],
-                y=actual["wasatch_mw"],
-                name="Wasatch proxy (scaled synth)",
-                line=dict(color="#2b6cb0", width=2, dash="dot"),
-            )
-        )
-        mae = float(
-            np.abs(
-                wasatch_hat.sort_values("hour_ending")["wasatch_mw"].to_numpy()
-                - actual.sort_values("hour_ending")["wasatch_mw"].to_numpy()
-            ).mean()
-        )
-        st.caption(f"Wasatch predicted vs proxy MAE: **{mae:.0f} MW**")
-    fig_f.update_layout(
-        height=280,
-        margin=dict(l=10, r=10, t=10, b=10),
-        legend=dict(orientation="h", y=1.12),
-        xaxis_title="Hour ending",
-        yaxis_title="Wasatch MW",
-    )
-    st.plotly_chart(fig_f, use_container_width=True)
-    if jam_list:
-        st.caption(f"Red bands = EIA evening jam overlaid: {jam_txt}.")
+    # --- §4 Scale / gut-check ---
+    st.subheader("4 · Scale check")
     if MODEL_META_PATH.is_file():
         meta_m = json.loads(MODEL_META_PATH.read_text())
         if "wasatch" in meta_m:
             holdout = meta_m["wasatch"].get("holdout_date") or meta_m[
                 "wasatch"
             ].get("holdout_end", "—")
-            with st.expander("Model holdout", expanded=False):
-                st.caption(
-                    f"Wasatch holdout MAE **{meta_m['wasatch']['mae_mw']:.0f} MW** "
-                    f"({holdout})."
-                )
+            st.caption(
+                f"Wasatch holdout MAE **{meta_m['wasatch']['mae_mw']:.0f} MW** "
+                f"({holdout}). Day-ahead curve is in §0."
+            )
 
     with st.expander("How we know Wasatch isn’t inventing MW (gut-check)", expanded=False):
         _w_peak = float(wasatch_hat["wasatch_mw"].max())
