@@ -315,15 +315,6 @@ def main() -> None:
 
     hist_end = forecast_bundle.get("history_end", "?")
     n_hist = forecast_bundle.get("n_history_days", 0)
-    st.caption(
-        f"HGB day-ahead for **{date_s}** from history through **{hist_end}** "
-        f"({n_hist} prior days: lags through 1 week + Open-Meteo Millcreek weather)."
-    )
-    if isinstance(n_hist, int) and n_hist < min_history_days:
-        st.warning(
-            f"Fewer than {min_history_days} history days before this date — "
-            "forecast may be weak; pick a later day."
-        )
 
     weather = forecast_bundle["weather"]
     if not isinstance(weather, pd.DataFrame):
@@ -432,8 +423,13 @@ def main() -> None:
     jam_list = _jam_hours(scored)
     jam_txt = ", ".join(f"HE{h}" for h in jam_list) if jam_list else "—"
 
-    # --- §1 Metrics ---
-    st.subheader("1 · Impact metrics")
+    # --- §1 Metrics (must be first visual after day picker) ---
+    evening_before = float(metrics.get("evening_mwh_before", 0) or 0)
+    evening_off = float(metrics.get("headline_mwh_off_rush", 0) or 0)
+    jam_cut_pct = (
+        100.0 * evening_off / evening_before if evening_before > 1e-9 else 0.0
+    )
+    st.subheader("1 · Metrics")
     st.markdown(
         f"""
         <div class="headline-box">
@@ -441,34 +437,47 @@ def main() -> None:
           retime residential flex out of the rush into cleaner hours.
           Jam tonight: <strong>{jam_txt}</strong> ·
           evening MWh off rush:
-          <strong>{metrics.get('headline_mwh_off_rush', 0):.0f}</strong>
+          <strong>{evening_off:.0f}</strong>
         </div>
         """,
         unsafe_allow_html=True,
-    )
-    evening_before = float(metrics.get("evening_mwh_before", 0) or 0)
-    evening_off = float(metrics.get("headline_mwh_off_rush", 0) or 0)
-    jam_cut_pct = (
-        100.0 * evening_off / evening_before if evening_before > 1e-9 else 0.0
     )
     h1, h2, h3 = st.columns(3)
     h1.metric("Evening MWh off rush", f"{evening_off:.0f}")
     h2.metric(
         "Jam-hour demand cut",
         f"{jam_cut_pct:.0f}%",
-        help="Share of Wasatch MWh removed inside BA jam hours (HE18–22), not daily max MW.",
+        help="Share of Wasatch MWh removed inside BA jam hours, not daily max MW.",
     )
     h3.metric(
         "Congestion avoided",
         f"{metrics.get('congestion_avoided', 0):.0f}",
         help="Drop in congestion-weighted MWh·score",
     )
+    d1, d2, d3 = st.columns(3)
+    d1.metric("Flex shifted", f"{metrics.get('mwh_shifted_total', 0):.0f} MWh")
+    d2.metric(
+        "Battery charge / discharge",
+        f"{metrics.get('battery_mwh_charged', 0):.0f} / "
+        f"{metrics.get('battery_mwh_discharged', 0):.0f}",
+    )
+    d3.metric(
+        "Solar live / batt-PV",
+        f"{metrics.get('solar_live_mwh', metrics.get('solar_to_load_mwh', 0)):.0f} / "
+        f"{metrics.get('battery_direct_mwh', 0):.0f}",
+    )
 
     # --- §2 Wasatch day-ahead ---
     st.subheader("2 · Wasatch day-ahead prediction")
     st.caption(
-        "HistGradientBoosting on lagged Wasatch MW (1h…1 week) + Millcreek weather."
+        f"HGB on lagged Wasatch MW (1h…1 week) + Millcreek weather. "
+        f"Trained through **{hist_end}** ({n_hist} prior days)."
     )
+    if isinstance(n_hist, int) and n_hist < min_history_days:
+        st.warning(
+            f"Fewer than {min_history_days} history days before this date — "
+            "forecast may be weak; pick a later day."
+        )
     fig_pred = go.Figure()
     fig_pred.add_trace(
         go.Scatter(
@@ -618,18 +627,6 @@ def main() -> None:
         for step in plan:
             st.markdown(f"- **{step.asset}:** {step.action}")
 
-    d1, d2, d3 = st.columns(3)
-    d1.metric("Flex shifted", f"{metrics.get('mwh_shifted_total', 0):.0f} MWh")
-    d2.metric(
-        "Battery charge / discharge",
-        f"{metrics.get('battery_mwh_charged', 0):.0f} / "
-        f"{metrics.get('battery_mwh_discharged', 0):.0f}",
-    )
-    d3.metric(
-        "Solar live / batt-PV",
-        f"{metrics.get('solar_live_mwh', metrics.get('solar_to_load_mwh', 0)):.0f} / "
-        f"{metrics.get('battery_direct_mwh', 0):.0f}",
-    )
     if metrics.get("new_peak_created"):
         st.warning(
             f"After-agent peak is at HE{metrics.get('after_peak_hour_ending', '?')} "
@@ -811,188 +808,189 @@ def main() -> None:
             "(less fleet MW on high-score hours)."
         )
 
-    # --- §5 BA traffic ---
-    st.subheader("5 · BA traffic — when the grid is jammed")
-    st.caption(
-        "Score = 0.5·within-day demand rank + 0.3·dirty-mix rank + 0.2·evening flag. "
-        "Jam = top scores inside HE16–22. Labeled BA stress — not LMP congestion."
-    )
-    if not has_ba_demand:
-        st.error(
-            "No BA demand for this day (EIA cache miss and PACE forecast unavailable). "
-            + (pace_pack.get("error") or f"source={pace_source or 'missing'}")
+    # --- Supporting: BA traffic (below the main 1–4 path) ---
+    with st.expander("BA traffic — when the grid is jammed", expanded=False):
+        st.caption(
+            "Score = 0.5·within-day demand rank + 0.3·dirty-mix rank + 0.2·evening flag. "
+            "Jam = top scores inside HE16–22. Labeled BA stress — not LMP congestion."
         )
-    else:
-        if pace_forecast_used:
-            st.info(
-                f"**Labeled HGB day-ahead PACE forecast** for {date_s} "
-                "(no EIA actual published for this day). Not live EIA-930."
+        if not has_ba_demand:
+            st.error(
+                "No BA demand for this day (EIA cache miss and PACE forecast unavailable). "
+                + (pace_pack.get("error") or f"source={pace_source or 'missing'}")
             )
-        fig_e = go.Figure()
-        _add_jam_bands(fig_e, scored, 0.22)
-        fig_e.add_trace(
-            go.Scatter(
-                x=pace_demand["hour_ending"],
-                y=pace_demand["demand_mw"],
-                name=(
-                    "PACE HGB forecast"
-                    if pace_forecast_used
-                    else "EIA BA demand (actual)"
-                ),
-                line=dict(color="#c53030", width=3),
-            )
-        )
-        # When we have EIA actuals, also overlay the day-ahead PACE HGB prediction
-        pace_hat_overlay = forecast_bundle.get("pace")
-        if (
-            has_eia_demand
-            and isinstance(pace_hat_overlay, pd.DataFrame)
-            and not pace_hat_overlay.empty
-            and "mw_hat" in pace_hat_overlay.columns
-        ):
+        else:
+            if pace_forecast_used:
+                st.info(
+                    f"**Labeled HGB day-ahead PACE forecast** for {date_s} "
+                    "(no EIA actual published for this day). Not live EIA-930."
+                )
+            fig_e = go.Figure()
+            _add_jam_bands(fig_e, scored, 0.22)
             fig_e.add_trace(
                 go.Scatter(
-                    x=pace_hat_overlay["hour_ending"],
-                    y=pace_hat_overlay["mw_hat"],
-                    name="PACE HGB day-ahead (model)",
-                    line=dict(color="#c53030", width=2, dash="dot"),
+                    x=pace_demand["hour_ending"],
+                    y=pace_demand["demand_mw"],
+                    name=(
+                        "PACE HGB forecast"
+                        if pace_forecast_used
+                        else "EIA BA demand (actual)"
+                    ),
+                    line=dict(color="#c53030", width=3),
                 )
             )
-        fig_e.update_layout(
-            height=280,
-            margin=dict(l=10, r=10, t=10, b=10),
-            xaxis_title="Hour ending (America/Denver)",
-            yaxis_title="MW",
-            legend=dict(orientation="h", y=1.12),
-        )
-        st.plotly_chart(fig_e, use_container_width=True)
-        ba_peak = float(pace_demand["demand_mw"].max())
-        ba_peak_he = int(
-            pace_demand.loc[pace_demand["demand_mw"].idxmax(), "hour_ending"]
-        )
-        src_lbl = "Forecast" if pace_forecast_used else "EIA"
-        st.caption(
-            f"{src_lbl} peak **{ba_peak:.0f} MW** at HE{ba_peak_he}. "
-            f"Red bands = evening jam: **{jam_txt}**."
-        )
-
-    left, right = st.columns(2)
-    with left:
-        st.markdown("**Fuel mix** (how the BA meets load)")
-        if not fuel.empty:
-            if fuel_proxy_from:
-                st.caption(
-                    f"Prior-day EIA mix from **{fuel_proxy_from}** "
-                    "(labeled proxy for CI — not same-day fuel)."
-                )
-            fuel_plot = fuel.sort_values("hour_ending")
-            stack_cols = [
-                c
-                for c in (
-                    "solar",
-                    "wind",
-                    "hydro",
-                    "nuclear",
-                    "natural_gas",
-                    "coal",
-                    "other",
-                    "oil",
-                )
-                if c in fuel_plot.columns
-            ]
-            fig_fuel = go.Figure()
-            palette = {
-                "solar": "#f6e05e",
-                "wind": "#63b3ed",
-                "hydro": "#4fd1c5",
-                "nuclear": "#b794f4",
-                "natural_gas": "#fc8181",
-                "coal": "#718096",
-                "other": "#a0aec0",
-                "oil": "#ed8936",
-            }
-            for col in stack_cols:
-                fig_fuel.add_trace(
-                    go.Bar(
-                        x=fuel_plot["hour_ending"],
-                        y=fuel_plot[col],
-                        name=col.replace("_", " "),
-                        marker_color=palette.get(col, "#cbd5e0"),
+            # When we have EIA actuals, also overlay the day-ahead PACE HGB prediction
+            pace_hat_overlay = forecast_bundle.get("pace")
+            if (
+                has_eia_demand
+                and isinstance(pace_hat_overlay, pd.DataFrame)
+                and not pace_hat_overlay.empty
+                and "mw_hat" in pace_hat_overlay.columns
+            ):
+                fig_e.add_trace(
+                    go.Scatter(
+                        x=pace_hat_overlay["hour_ending"],
+                        y=pace_hat_overlay["mw_hat"],
+                        name="PACE HGB day-ahead (model)",
+                        line=dict(color="#c53030", width=2, dash="dot"),
                     )
                 )
-            fig_fuel.update_layout(
-                barmode="stack",
+            fig_e.update_layout(
                 height=280,
-                margin=dict(l=8, r=8, t=8, b=8),
-                legend=dict(orientation="h", y=1.16),
+                margin=dict(l=10, r=10, t=10, b=10),
+                xaxis_title="Hour ending (America/Denver)",
+                yaxis_title="MW",
+                legend=dict(orientation="h", y=1.12),
             )
-            st.plotly_chart(fig_fuel, use_container_width=True)
-        else:
-            st.caption("Fuel mix unavailable for this day.")
-    with right:
-        st.markdown("**Congestion score**")
-        if scored.empty:
-            st.caption("No EIA demand — congestion score unavailable.")
-        else:
-            scored_plot = scored.sort_values("hour_ending")
-            fig_s = go.Figure()
-            _add_jam_bands(fig_s, scored_plot, 0.28)
-            fig_s.add_trace(
-                go.Scatter(
-                    x=scored_plot["hour_ending"],
-                    y=scored_plot["congestion_score"],
-                    name="BA congestion score",
-                    fill="tozeroy",
-                    line=dict(color="#fc8181", width=2),
-                )
+            st.plotly_chart(fig_e, use_container_width=True)
+            ba_peak = float(pace_demand["demand_mw"].max())
+            ba_peak_he = int(
+                pace_demand.loc[pace_demand["demand_mw"].idxmax(), "hour_ending"]
             )
-            fig_s.update_layout(
-                height=280,
-                margin=dict(l=8, r=8, t=8, b=8),
-                xaxis_title="Hour ending",
-                yaxis_title="Score",
-                showlegend=False,
+            src_lbl = "Forecast" if pace_forecast_used else "EIA"
+            st.caption(
+                f"{src_lbl} peak **{ba_peak:.0f} MW** at HE{ba_peak_he}. "
+                f"Red bands = evening jam: **{jam_txt}**."
             )
-            st.plotly_chart(fig_s, use_container_width=True)
-            st.caption(f"Red bands = evening jam ({jam_txt}).")
 
-    # --- §6 Meters ---
-    st.subheader("6 · Your meters (Millcreek)")
-    st.caption(
-        "Real RMP Green Button: main house + casita. "
-        "Illustrative home shift off jam hours — fleet optimizer is §4."
-    )
-    meters = load_house_casita_best(date_s)
-    meter_date = str(meters.get("meter_date") or date_s)
-    if meters.get("is_proxy"):
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Fuel mix** (how the BA meets load)")
+            if not fuel.empty:
+                if fuel_proxy_from:
+                    st.caption(
+                        f"Prior-day EIA mix from **{fuel_proxy_from}** "
+                        "(labeled proxy for CI — not same-day fuel)."
+                    )
+                fuel_plot = fuel.sort_values("hour_ending")
+                stack_cols = [
+                    c
+                    for c in (
+                        "solar",
+                        "wind",
+                        "hydro",
+                        "nuclear",
+                        "natural_gas",
+                        "coal",
+                        "other",
+                        "oil",
+                    )
+                    if c in fuel_plot.columns
+                ]
+                fig_fuel = go.Figure()
+                palette = {
+                    "solar": "#f6e05e",
+                    "wind": "#63b3ed",
+                    "hydro": "#4fd1c5",
+                    "nuclear": "#b794f4",
+                    "natural_gas": "#fc8181",
+                    "coal": "#718096",
+                    "other": "#a0aec0",
+                    "oil": "#ed8936",
+                }
+                for col in stack_cols:
+                    fig_fuel.add_trace(
+                        go.Bar(
+                            x=fuel_plot["hour_ending"],
+                            y=fuel_plot[col],
+                            name=col.replace("_", " "),
+                            marker_color=palette.get(col, "#cbd5e0"),
+                        )
+                    )
+                fig_fuel.update_layout(
+                    barmode="stack",
+                    height=280,
+                    margin=dict(l=8, r=8, t=8, b=8),
+                    legend=dict(orientation="h", y=1.16),
+                )
+                st.plotly_chart(fig_fuel, use_container_width=True)
+            else:
+                st.caption("Fuel mix unavailable for this day.")
+        with right:
+            st.markdown("**Congestion score**")
+            if scored.empty:
+                st.caption("No EIA demand — congestion score unavailable.")
+            else:
+                scored_plot = scored.sort_values("hour_ending")
+                fig_s = go.Figure()
+                _add_jam_bands(fig_s, scored_plot, 0.28)
+                fig_s.add_trace(
+                    go.Scatter(
+                        x=scored_plot["hour_ending"],
+                        y=scored_plot["congestion_score"],
+                        name="BA congestion score",
+                        fill="tozeroy",
+                        line=dict(color="#fc8181", width=2),
+                    )
+                )
+                fig_s.update_layout(
+                    height=280,
+                    margin=dict(l=8, r=8, t=8, b=8),
+                    xaxis_title="Hour ending",
+                    yaxis_title="Score",
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_s, use_container_width=True)
+                st.caption(f"Red bands = evening jam ({jam_txt}).")
+
+    # --- Supporting: meters ---
+    with st.expander("Your meters (Millcreek)", expanded=False):
         st.caption(
-            f"No meter file for {date_s} — showing latest metered day ≤ target: "
-            f"**{meter_date}**."
+            "Real RMP Green Button: main house + casita. "
+            "Illustrative home shift off jam hours — fleet optimizer is §4."
         )
-    jam = set(jam_list) if jam_list else set(range(18, 23))
-    m1, m2 = st.columns(2)
-    with m1:
-        if meters["main_house"].empty:
-            st.info("No main-house intervals available.")
-        else:
-            st.plotly_chart(
-                _meter_chart(
-                    propose_house_shift(meters["main_house"], jam),
-                    f"Main house · {meter_date}",
-                ),
-                use_container_width=True,
+        meters = load_house_casita_best(date_s)
+        meter_date = str(meters.get("meter_date") or date_s)
+        if meters.get("is_proxy"):
+            st.caption(
+                f"No meter file for {date_s} — showing latest metered day ≤ target: "
+                f"**{meter_date}**."
             )
-    with m2:
-        if meters["casita"].empty:
-            st.info("No casita intervals available.")
-        else:
-            st.plotly_chart(
-                _meter_chart(
-                    propose_house_shift(meters["casita"], jam),
-                    f"Casita · {meter_date}",
-                ),
-                use_container_width=True,
-            )
+        jam = set(jam_list) if jam_list else set(range(18, 23))
+        m1, m2 = st.columns(2)
+        with m1:
+            if meters["main_house"].empty:
+                st.info("No main-house intervals available.")
+            else:
+                st.plotly_chart(
+                    _meter_chart(
+                        propose_house_shift(meters["main_house"], jam),
+                        f"Main house · {meter_date}",
+                    ),
+                    use_container_width=True,
+                )
+        with m2:
+            if meters["casita"].empty:
+                st.info("No casita intervals available.")
+            else:
+                st.plotly_chart(
+                    _meter_chart(
+                        propose_house_shift(meters["casita"], jam),
+                        f"Casita · {meter_date}",
+                    ),
+                    use_container_width=True,
+                )
+
 
 
 
