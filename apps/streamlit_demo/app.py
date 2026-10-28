@@ -770,7 +770,6 @@ def main() -> None:
             "(less fleet MW on high-score hours)."
         )
 
-    st.subheader("4 · Impact metrics")
     st.markdown(
         f"""
         <div class="headline-box">
@@ -808,7 +807,7 @@ def main() -> None:
         f"{metrics.get('battery_direct_mwh', 0):.0f}",
     )
 
-    # --- Supporting: BA traffic (below the main 1–4 path) ---
+    # --- Supporting: BA traffic ---
     with st.expander("BA traffic — when the grid is jammed", expanded=False):
         st.caption(
             "Score = 0.5·within-day demand rank + 0.3·dirty-mix rank + 0.2·evening flag. "
