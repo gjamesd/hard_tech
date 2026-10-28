@@ -173,6 +173,37 @@ def cache_paths(date: str, cache_dir: Path = GRID_CACHE_DIR) -> dict[str, Path]:
     }
 
 
+def load_nearest_fuel(
+    day: str,
+    *,
+    cache_dir: Path = GRID_CACHE_DIR,
+    lookback_days: int = 7,
+) -> tuple[pd.DataFrame, str]:
+    """
+    Nearest prior EIA fuel_mix for CI when the target day has no fuel cache.
+    Returns (fuel_df, source_date) or (empty, "").
+    """
+    try:
+        cur = date.fromisoformat(day)
+    except ValueError:
+        return pd.DataFrame(), ""
+    for back in range(1, lookback_days + 1):
+        prior = (cur - timedelta(days=back)).isoformat()
+        path = cache_dir / prior / "fuel_mix.parquet"
+        marker = cache_dir / prior / "source.txt"
+        if not path.is_file():
+            continue
+        if marker.is_file() and marker.read_text().strip() != "eia":
+            continue
+        fuel = pd.read_parquet(path)
+        if fuel.empty:
+            continue
+        fuel = fuel.copy()
+        fuel["date"] = day
+        return fuel, prior
+    return pd.DataFrame(), ""
+
+
 def synthetic_pace_day(date: str) -> dict[str, pd.DataFrame]:
     """
     Labeled offline PACE proxy when EIA_API_KEY is missing.

@@ -28,13 +28,13 @@ MORNING_SOC_FRAC = 0.15
 # (calibrated so surplus ≈ ~2 kWh/home·day of ~5.3 kWh gen; summer higher)
 DAYTIME_COINCIDENCE = 0.38
 
-FLEX_COLS = (
+APPLIANCE_FLEX_COLS = (
     "wasatch_flex_hvac_mw",
     "wasatch_flex_laundry_mw",
     "wasatch_flex_dishwasher_mw",
     "wasatch_flex_ev_mw",
-    "wasatch_flexible_mw",
 )
+FLEX_COLS = (*APPLIANCE_FLEX_COLS, "wasatch_flexible_mw")
 
 
 @dataclass
@@ -155,14 +155,13 @@ def _slice_frame(df: pd.DataFrame, share: float) -> pd.DataFrame:
 def _ensure_evening_flex(frame: pd.DataFrame, flex_frac: float = 0.16) -> pd.DataFrame:
     """If flex columns are empty, synthesize modest evening flex (avoid V-needles)."""
     out = frame.copy()
-    total_flex = sum(float(out[c].sum()) for c in FLEX_COLS if c in out.columns)
+    cols = [c for c in APPLIANCE_FLEX_COLS if c in out.columns]
+    total_flex = sum(float(out[c].sum()) for c in cols)
     if total_flex > 1.0:
-        # Cap total evening flex so jam hours cannot donate the whole stack
         he = out["hour_ending"].to_numpy()
         base = out["wasatch_mw"].to_numpy(dtype=float)
         jam = (he >= 18) & (he <= 22)
         stack = np.zeros(len(out), dtype=float)
-        cols = [c for c in FLEX_COLS if c in out.columns]
         for col in cols:
             stack += out[col].to_numpy(dtype=float)
         cap = np.where(jam, base * flex_frac, stack)
@@ -171,8 +170,9 @@ def _ensure_evening_flex(frame: pd.DataFrame, flex_frac: float = 0.16) -> pd.Dat
         scale[over] = cap[over] / stack[over]
         for col in cols:
             out[col] = out[col].to_numpy(dtype=float) * scale
-        if "wasatch_flexible_mw" in out.columns:
-            out["wasatch_flexible_mw"] = stack * scale
+        out["wasatch_flexible_mw"] = sum(
+            out[c].to_numpy(dtype=float) for c in cols
+        )
         return out
     he = out["hour_ending"].to_numpy()
     base = out["wasatch_mw"].to_numpy(dtype=float)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -102,8 +101,3 @@ def load_or_fetch_weather(
     df = fetch_millcreek_day(date)
     df.to_parquet(path, index=False)
     return df
-
-
-def tomorrow_date_denver() -> str:
-    # Approximate with local machine date; Open-Meteo uses America/Denver in queries
-    return (date.today() + timedelta(days=1)).isoformat()

@@ -23,13 +23,11 @@ load_dotenv(ROOT / ".env")
 from lib.agent_plan import build_agent_plan  # noqa: E402
 from lib.aggregate import available_dates, load_wasatch_day  # noqa: E402
 from lib.congestion import congestion_score_v0  # noqa: E402
-from lib.day_pipeline import build_day_pack, load_day_pack  # noqa: E402
-from lib.eia_pace import load_or_fetch_day  # noqa: E402
+from lib.eia_pace import load_nearest_fuel, load_or_fetch_day  # noqa: E402
 from lib.forecast import predict_day  # noqa: E402
 from lib.interventions import apply_relief_stack  # noqa: E402
 from lib.meters import load_house_casita_best, propose_house_shift  # noqa: E402
 from lib.paths import (  # noqa: E402
-    DEMO_PACK_DIR,
     EFFECTIVE_MULT,
     GRID_CACHE_DIR,
     HERO_DATES,
@@ -38,7 +36,6 @@ from lib.paths import (  # noqa: E402
     INTENSITY,
     MODEL_META_PATH,
     SCALE,
-    WASATCH_DAY_DIR,
     WASATCH_MODEL_PATH,
 )
 from lib.residual import (  # noqa: E402
@@ -99,22 +96,6 @@ def _actual_wasatch(date: str, _mult: float = EFFECTIVE_MULT) -> pd.DataFrame:
         return load_wasatch_day(date)
     except FileNotFoundError:
         return pd.DataFrame()
-
-
-@st.cache_data(show_spinner=False)
-def _grid_pack(date: str, _mult: float = EFFECTIVE_MULT) -> dict:
-    pack_dir = DEMO_PACK_DIR / date
-    if not (pack_dir / "meta.json").is_file():
-        if not (WASATCH_DAY_DIR / "all_days.parquet").is_file():
-            return {}
-        try:
-            build_day_pack(date, fetch_grid=True)
-        except Exception:
-            return {}
-    try:
-        return load_day_pack(date)
-    except Exception:
-        return {}
 
 
 @st.cache_data(show_spinner="Pulling EIA PACE…")
@@ -225,8 +206,11 @@ def main() -> None:
         )
         return
 
-    min_d = pd.to_datetime(dates[0]).date() + timedelta(days=7)
-    max_d = pd.to_datetime(dates[-1]).date() + timedelta(days=1)
+    data_start = pd.to_datetime(dates[0]).date()
+    data_end = pd.to_datetime(dates[-1]).date()
+    min_history_days = 7
+    min_d = data_start + timedelta(days=min_history_days)
+    max_d = data_end + timedelta(days=1)
     if "demo_day" not in st.session_state:
         st.session_state.demo_day = _pick_default_day(dates)
     if st.session_state.demo_day < min_d:
@@ -235,6 +219,13 @@ def main() -> None:
         st.session_state.demo_day = max_d
 
     st.markdown("**Demo day**")
+    st.caption(
+        f"Wasatch sample covers **{data_start.isoformat()} → {data_end.isoformat()}** "
+        f"({len(dates)} days). "
+        f"Earliest selectable day is **{min_d.isoformat()}** "
+        f"(needs ≥{min_history_days} prior days for lag features). "
+        f"Latest is **{max_d.isoformat()}** (one day past the sample — labeled forecast when EIA isn’t cached)."
+    )
     hero_cols = st.columns(len(HERO_DATES))
     for i, hero in enumerate(HERO_DATES):
         label = HERO_LABELS.get(hero, hero)
@@ -254,7 +245,11 @@ def main() -> None:
         value=st.session_state.demo_day,
         min_value=min_d,
         max_value=max_d,
-        help="Uses all Wasatch/PACE hours strictly before this date.",
+        help=(
+            f"Data window {data_start} → {data_end}. "
+            f"Picker starts {min_d} (need {min_history_days}+ history days) "
+            f"and ends {max_d} (next-day forecast)."
+        ),
         key="date_picker",
     )
     if date != st.session_state.demo_day:
@@ -297,11 +292,15 @@ def main() -> None:
     hist_end = forecast_bundle.get("history_end", "?")
     n_hist = forecast_bundle.get("n_history_days", 0)
     st.caption(
-        f"Predicted **{date_s}** from history through **{hist_end}** "
-        f"({n_hist} days) + Open-Meteo Millcreek weather."
+        f"Predicted **{date_s}** using all history through **{hist_end}** "
+        f"({n_hist} prior days) + Open-Meteo Millcreek weather. "
+        "Models need those prior days for lags (hour/day/week)."
     )
-    if isinstance(n_hist, int) and n_hist < 7:
-        st.warning("Less than 7 days of history before this date — forecast may be weak.")
+    if isinstance(n_hist, int) and n_hist < min_history_days:
+        st.warning(
+            f"Fewer than {min_history_days} history days before this date — "
+            "forecast may be weak; pick a later day."
+        )
 
     weather = forecast_bundle["weather"]
     if not isinstance(weather, pd.DataFrame):
@@ -353,11 +352,12 @@ def main() -> None:
     fuel = pace_pack.get("fuel")
     if not isinstance(fuel, pd.DataFrame):
         fuel = pd.DataFrame()
-    if fuel.empty:
-        grid = _grid_pack(date_s) if date_s in dates else {}
-        fuel_g = grid.get("pace_fuel") if grid else None
-        if isinstance(fuel_g, pd.DataFrame) and not fuel_g.empty:
-            fuel = fuel_g
+    fuel_proxy_from = ""
+    if not has_eia_demand or fuel.empty:
+        prior_fuel, prior_day = load_nearest_fuel(date_s)
+        if not prior_fuel.empty:
+            fuel = prior_fuel
+            fuel_proxy_from = prior_day
 
     pace_demand = pace_eia if has_eia_demand else pd.DataFrame()
     pace_forecast_used = False
@@ -462,6 +462,11 @@ def main() -> None:
     with left:
         st.markdown("**Fuel mix** (how the BA meets load)")
         if not fuel.empty:
+            if fuel_proxy_from:
+                st.caption(
+                    f"Prior-day EIA mix from **{fuel_proxy_from}** "
+                    "(labeled proxy for CI — not same-day fuel)."
+                )
             fuel_plot = fuel.sort_values("hour_ending")
             stack_cols = [
                 c
