@@ -423,14 +423,52 @@ def main() -> None:
     jam_list = _jam_hours(scored)
     jam_txt = ", ".join(f"HE{h}" for h in jam_list) if jam_list else "—"
 
-    # --- §1 Metrics (must be first visual after day picker) ---
     evening_before = float(metrics.get("evening_mwh_before", 0) or 0)
     evening_off = float(metrics.get("headline_mwh_off_rush", 0) or 0)
     jam_cut_pct = (
         100.0 * evening_off / evening_before if evening_before > 1e-9 else 0.0
     )
-    # --- §1 Wasatch day-ahead ---
-    st.subheader("1 · Wasatch day-ahead prediction")
+
+    # --- §1 Millcreek house meters (seed / proof) ---
+    st.subheader("1 · Your meters (Millcreek)")
+    st.caption(
+        "Real RMP Green Button: main house + casita. "
+        "Illustrative home shift off jam hours — fleet optimizer is §4 (agent)."
+    )
+    meters = load_house_casita_best(date_s)
+    meter_date = str(meters.get("meter_date") or date_s)
+    if meters.get("is_proxy"):
+        st.caption(
+            f"No meter file for {date_s} — showing latest metered day ≤ target: "
+            f"**{meter_date}**."
+        )
+    jam = set(jam_list) if jam_list else set(range(18, 23))
+    m1, m2 = st.columns(2)
+    with m1:
+        if meters["main_house"].empty:
+            st.info("No main-house intervals available.")
+        else:
+            st.plotly_chart(
+                _meter_chart(
+                    propose_house_shift(meters["main_house"], jam),
+                    f"Main house · {meter_date}",
+                ),
+                use_container_width=True,
+            )
+    with m2:
+        if meters["casita"].empty:
+            st.info("No casita intervals available.")
+        else:
+            st.plotly_chart(
+                _meter_chart(
+                    propose_house_shift(meters["casita"], jam),
+                    f"Casita · {meter_date}",
+                ),
+                use_container_width=True,
+            )
+
+    # --- §2 Wasatch day-ahead ---
+    st.subheader("2 · Wasatch day-ahead prediction")
     st.caption(
         f"HGB on lagged Wasatch MW (1h…1 week) + Millcreek weather. "
         f"Trained through **{hist_end}** ({n_hist} prior days)."
@@ -479,8 +517,8 @@ def main() -> None:
     )
     st.plotly_chart(fig_pred, use_container_width=True)
 
-    # --- §2 Scale / gut-check ---
-    st.subheader("2 · Scale check (gut-check)")
+    # --- §3 Scale / gut-check ---
+    st.subheader("3 · Scale check (gut-check)")
     if MODEL_META_PATH.is_file():
         meta_m = json.loads(MODEL_META_PATH.read_text())
         if "wasatch" in meta_m:
@@ -489,7 +527,7 @@ def main() -> None:
             ].get("holdout_end", "—")
             st.caption(
                 f"Wasatch holdout MAE **{meta_m['wasatch']['mae_mw']:.0f} MW** "
-                f"({holdout}). Day-ahead curve is in §1."
+                f"({holdout}). Day-ahead curve is in §2."
             )
 
     with st.expander("How we know Wasatch isn’t inventing MW (gut-check)", expanded=True):
@@ -571,8 +609,8 @@ def main() -> None:
                     "Gut-check **Review** — share outside soft band "
                     "(energy 20–32%, peak 18–45%); still usable if labeled."
                 )
-    # --- §3 Agent ---
-    st.subheader("3 · Agent schedule + solar")
+    # --- §4 Agent ---
+    st.subheader("4 · Agent schedule + solar")
     st.caption(
         "Proposal only — no live RMP / device control. "
         "BA jam is the map; exposure drop is the proof."
@@ -951,45 +989,6 @@ def main() -> None:
                 )
                 st.plotly_chart(fig_s, use_container_width=True)
                 st.caption(f"Red bands = evening jam ({jam_txt}).")
-
-    # --- Supporting: meters ---
-    with st.expander("Your meters (Millcreek)", expanded=False):
-        st.caption(
-            "Real RMP Green Button: main house + casita. "
-            "Illustrative home shift off jam hours — fleet optimizer is §4."
-        )
-        meters = load_house_casita_best(date_s)
-        meter_date = str(meters.get("meter_date") or date_s)
-        if meters.get("is_proxy"):
-            st.caption(
-                f"No meter file for {date_s} — showing latest metered day ≤ target: "
-                f"**{meter_date}**."
-            )
-        jam = set(jam_list) if jam_list else set(range(18, 23))
-        m1, m2 = st.columns(2)
-        with m1:
-            if meters["main_house"].empty:
-                st.info("No main-house intervals available.")
-            else:
-                st.plotly_chart(
-                    _meter_chart(
-                        propose_house_shift(meters["main_house"], jam),
-                        f"Main house · {meter_date}",
-                    ),
-                    use_container_width=True,
-                )
-        with m2:
-            if meters["casita"].empty:
-                st.info("No casita intervals available.")
-            else:
-                st.plotly_chart(
-                    _meter_chart(
-                        propose_house_shift(meters["casita"], jam),
-                        f"Casita · {meter_date}",
-                    ),
-                    use_container_width=True,
-                )
-
 
 
 
