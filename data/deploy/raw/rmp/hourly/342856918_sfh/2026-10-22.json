@@ -1,0 +1,132 @@
+{
+  "getIntervalUsageForDateResponseBody": {
+    "response": {
+      "intervalDataResponse": [
+        {
+          "readDate": "2026-10-22",
+          "readTime": "01:00",
+          "usage": "0.339"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "02:00",
+          "usage": "0.323"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "03:00",
+          "usage": "0.245"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "04:00",
+          "usage": "0.256"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "05:00",
+          "usage": "0.387"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "06:00",
+          "usage": "0.397"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "07:00",
+          "usage": "0.534"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "08:00",
+          "usage": "0.328"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "09:00",
+          "usage": "0.285"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "10:00",
+          "usage": "0.248"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "11:00",
+          "usage": "0.460"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "12:00",
+          "usage": "0.300"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "13:00",
+          "usage": "0.265"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "14:00",
+          "usage": "0.267"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "15:00",
+          "usage": "0.268"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "16:00",
+          "usage": "0.272"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "17:00",
+          "usage": "2.508"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "18:00",
+          "usage": "0.521"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "19:00",
+          "usage": "1.013"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "20:00",
+          "usage": "0.416"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "21:00",
+          "usage": "0.412"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "22:00",
+          "usage": "0.385"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "23:00",
+          "usage": "0.506"
+        },
+        {
+          "readDate": "2026-10-22",
+          "readTime": "24:00",
+          "usage": "1.773"
+        }
+      ]
+    },
+    "intervalDataExists": true,
+    "operationResult": {
+      "returnStatus": 1
+    }
+  }
+}

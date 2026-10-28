@@ -9,10 +9,10 @@
 
 | # | Phase | Blocking? | Can run in parallel with | Plan file | Status |
 |---|-------|-----------|--------------------------|-----------|--------|
-| 01 | Data ingest + congestion score | **Yes** | — | `phase-01-data.md` | next |
-| 02 | Scheduler / agent (stay out of traffic) | Yes after 01 | 03 | `phase-02-scheduler.md` | |
-| 03 | Demo UI (traffic report + before/after) | Yes after 01 | 02 | `phase-03-ui.md` | |
-| 04 | Last mile: audit, persona, polish, live URL | — | — | — | |
+| 01 | Data ingest + congestion score | **Yes** | — | `phase-01-data.md` | done-ish |
+| 02 | Traffic report (Wasatch × EIA + residual) | — | — | `phase-02-traffic-report.md` | mostly done |
+| 03 | Clean-power **proposal** agent (demo hero) | **blocking now** | — | `phase-03-clean-schedule-agent.md` | **next** |
+| 04 | Last mile: audit, persona, polish, live URL | — | — | — | polish done · pack `data/deploy` · publish Streamlit Cloud URL |
 
 ## Architecture (thin)
 

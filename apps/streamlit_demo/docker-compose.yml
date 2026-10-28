@@ -1,0 +1,12 @@
+services:
+  wasatch-traffic:
+    build:
+      context: ../..
+      dockerfile: apps/streamlit_demo/Dockerfile
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app/apps/streamlit_demo
+      - GRID_RUSH_ROOT=/app
+      - GRID_RUSH_USE_DEPLOY=1
+      - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false

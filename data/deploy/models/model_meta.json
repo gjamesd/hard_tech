@@ -1,0 +1,50 @@
+{
+  "wasatch": {
+    "name": "wasatch",
+    "holdout_date": "2026-10-25",
+    "n_train_rows": 6192,
+    "mae_mw": 278.76922826053664,
+    "mape": 0.0967540199761772,
+    "features": [
+      "lag_1",
+      "lag_2",
+      "lag_3",
+      "lag_6",
+      "lag_12",
+      "lag_24",
+      "lag_168",
+      "hour_ending",
+      "dow",
+      "temp_c",
+      "shortwave_wm2",
+      "precip_mm",
+      "snowfall_cm"
+    ]
+  },
+  "pace": {
+    "name": "pace",
+    "holdout_date": "2026-10-25",
+    "n_train_rows": 6191,
+    "mae_mw": 168.81359313270926,
+    "mape": 0.03205624294204396,
+    "features": [
+      "lag_1",
+      "lag_2",
+      "lag_3",
+      "lag_6",
+      "lag_12",
+      "lag_24",
+      "lag_168",
+      "hour_ending",
+      "dow",
+      "temp_c",
+      "shortwave_wm2",
+      "precip_mm",
+      "snowfall_cm"
+    ]
+  },
+  "paths": {
+    "wasatch": "/Users/jamesgriffdgmail.com/Desktop/hard_tech_week/models/wasatch_demand_hgb.pkl",
+    "pace": "/Users/jamesgriffdgmail.com/Desktop/hard_tech_week/models/pace_demand_hgb.pkl"
+  }
+}

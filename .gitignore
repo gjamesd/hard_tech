@@ -50,8 +50,14 @@ credentials.json
 /data/raw/
 /data/processed/
 /data/interim/
+# Slim runtime pack for Streamlit Cloud / Docker (no secrets)
+!/data/deploy/
+!/data/deploy/**
 /scripts/rmp/.venv/
 /scripts/rmp/downloads/
 /scripts/rmp/__pycache__/
 **/__pycache__/
 *.pyc
+/models/*.pkl
+!/models/.gitkeep
+# Prefer committing pickles via data/deploy/models/ (tracked above)

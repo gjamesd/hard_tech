@@ -1,0 +1,20 @@
+{
+  "created_utc": "2026-10-28T14:57:54.307161Z",
+  "n_sample_homes": 5000,
+  "scale": 180,
+  "intensity": 3.375,
+  "effective_mult": 607.5,
+  "implied_stock": 900000,
+  "counties": [
+    "Salt Lake",
+    "Utah",
+    "Davis",
+    "Weber"
+  ],
+  "n_days": 266,
+  "day_start": "2026-02-01",
+  "day_end": "2026-10-25",
+  "mw_note": "MW = kWh/1000 for 1h bins; wasatch_mw = sum(fleet_kwh)*scale*intensity/1000",
+  "provenance": "5k RMP-seeded homes \u00d7 stock 180 \u2248 900,000 households (Salt Lake + Utah + Davis + Weber) \u00d7 intensity 3.375 (light Millcreek seed \u2192 ~10k kWh/home\u00b7year target)",
+  "all_days_parquet": "/Users/jamesgriffdgmail.com/Desktop/hard_tech_week/data/processed/wasatch_residential_day/all_days.parquet"
+}

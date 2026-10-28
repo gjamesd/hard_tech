@@ -65,3 +65,25 @@ python synthesize_housing_universe.py --upload-s3 --bucket hard-tech-bucket
 ```
 
 Writes gitignored Parquet to `data/processed/housing_universe/`.
+
+## Layer 3 — Wasatch aggregate (stock ×180 × intensity 1.35) + Streamlit
+
+```bash
+# Aggregate 5k homes → Wasatch MW (stock ≈ four counties, intensity for light seed)
+python aggregate_wasatch_day.py --all-dates
+
+# Build hero day packs (EIA PACE if EIA_API_KEY set; else labeled synthetic proxy)
+python build_demo_day_pack.py --heroes
+
+# Train tomorrow's Wasatch + PACE demand pickles (Open-Meteo weather features)
+python train_demand_forecast.py
+
+# Slim pack for Streamlit Cloud / Docker (~8 MB)
+python pack_streamlit_deploy.py
+
+# UI
+cd ../../apps/streamlit_demo && streamlit run app.py
+# or: docker compose up --build
+```
+
+See [`apps/streamlit_demo/README.md`](../../apps/streamlit_demo/README.md).
