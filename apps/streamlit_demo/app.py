@@ -879,17 +879,17 @@ def main() -> None:
             )
 
     with st.expander("How we know Wasatch isn’t inventing MW (gut-check)", expanded=False):
-        _w_peak = float(wasatch_hat["wasatch_mw"].max())
-        _w_mwh = float(wasatch_hat["wasatch_mw"].sum())
+        wasatch_for_residual = actual if not actual.empty else wasatch_hat
+        _w_peak = float(wasatch_for_residual["wasatch_mw"].max())
+        _w_mwh = float(wasatch_for_residual["wasatch_mw"].sum())
         _per_home_kwh = (_w_mwh * 1000.0) / float(IMPLIED_STOCK)
         st.caption(
             f"Peak **{_w_peak:.0f} MW** ÷ {IMPLIED_STOCK:,} homes ≈ "
             f"**{_w_peak * 1e6 / IMPLIED_STOCK:.0f} W/home** coincident; "
             f"day energy ≈ **{_per_home_kwh:.1f} kWh/home**. "
-            "Calibrated residential share of EIA (~25%); gut-check is regression, not proof. "
+            "Calibrated residential share of EIA (~25–33% peak); gut-check is regression, not proof. "
             "EIA timestamps are UTC → America/Denver."
         )
-        wasatch_for_residual = actual if not actual.empty else wasatch_hat
         if not has_eia_demand:
             st.warning("Gut-check skipped — need EIA hourly demand for this day.")
         else:
