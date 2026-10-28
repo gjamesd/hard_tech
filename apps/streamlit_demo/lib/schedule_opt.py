@@ -46,6 +46,7 @@ def _solve_one_appliance(
     to_h: set[int],
     jam_hours: set[int],
     p_cap: float,
+    peak: float,
 ) -> tuple[np.ndarray, float] | None:
     """Return (after_load, mwh_moved) or None if linprog fails / nothing to move."""
     n = len(hours)
@@ -53,19 +54,18 @@ def _solve_one_appliance(
         return load.copy(), 0.0
 
     c_obj = np.concatenate([-cost, cost])
-    flex_budget = float(flex.sum())
     bounds: list[tuple[float, float]] = []
     for i, h in enumerate(hours):
         f_max = float(flex[i]) if int(h) in from_h else 0.0
         f_max = min(f_max, max(0.0, float(load[i])))
         bounds.append((0.0, f_max))
+    # Receive into TO windows without creating a new daily peak (no HE14 dump).
+    recv_cap = max(float(peak), float(p_cap))
     for i, h in enumerate(hours):
         if int(h) not in to_h:
             bounds.append((0.0, 0.0))
             continue
-        # Intentional receive windows (pre-cool / midday) may already sit near
-        # the daily peak — allow absorbing this appliance's flex budget there.
-        room = max(flex_budget, max(0.0, p_cap - float(load[i])))
+        room = max(0.0, recv_cap - float(load[i]))
         bounds.append((0.0, room))
 
     if all(b[1] <= EPS for b in bounds[:n]) or all(b[1] <= EPS for b in bounds[n:]):
@@ -74,19 +74,18 @@ def _solve_one_appliance(
     a_eq = np.concatenate([np.ones(n), -np.ones(n)])[None, :]
     b_eq = np.array([0.0])
 
-    # Peak cap on non-jam hours that are *not* this appliance's TO window
-    # (don't block HVAC pre-cool / midday belly receive hours).
     a_ub_list = []
     b_ub_list = []
     for i, h in enumerate(hours):
         hi = int(h)
-        if hi in jam_hours or hi in to_h:
+        if hi in jam_hours:
             continue
         row = np.zeros(2 * n)
         row[i] = -1.0
         row[n + i] = 1.0
         a_ub_list.append(row)
-        b_ub_list.append(p_cap - float(load[i]))
+        cap = recv_cap if hi in to_h else float(p_cap)
+        b_ub_list.append(cap - float(load[i]))
 
     a_ub = np.vstack(a_ub_list) if a_ub_list else None
     b_ub = np.asarray(b_ub_list, dtype=float) if b_ub_list else None
@@ -182,6 +181,7 @@ def solve_flex_schedule(
             to_h=set(to_h),
             jam_hours=jam_hours,
             p_cap=p_cap,
+            peak=peak,
         )
         if step is None:
             # Keep prior appliances' moves; skip this one

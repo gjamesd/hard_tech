@@ -25,8 +25,8 @@ MORNING_DISCHARGE = set(range(3, 6))  # HE3–5 night trickle
 # ~85% jam (TOU peak) / ~15% HE3–5 non-peak baseline
 MORNING_SOC_FRAC = 0.15
 # Midday homes are often empty — only this fraction of adopting share is on-site
-# (calibrated so surplus ≈ ~2 kWh/home·day of ~5.3 kWh gen; summer higher)
-DAYTIME_COINCIDENCE = 0.38
+# (calibrated ≈2 kWh/home·day surplus of ~5.3 kWh gen at intensity=1.0)
+DAYTIME_COINCIDENCE = 0.10
 
 APPLIANCE_FLEX_COLS = (
     "wasatch_flex_hvac_mw",
