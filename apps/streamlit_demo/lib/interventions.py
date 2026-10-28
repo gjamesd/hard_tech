@@ -13,19 +13,20 @@ from .schedule_opt import (
     solve_flex_or_fallback,
 )
 
-KW_PER_HOME = 1.2  # HB 340 AC cap
+# Utah HB 340 + EcoFlow Stream setup (JerryRigEverything / balcony solar):
+#   4 panels ≈ 1.2 kW → microinverter → wall outlet (AC plug-in cap)
+#   + with battery: 3 more panels ≈ 0.8 kW → battery MPPTs only (not on AC cap)
+#   Battery feeds the house later — more evening kWh without breaking the 1.2 kW rule.
+KW_PER_HOME = 1.2
+KW_BATTERY_DIRECT = 0.8
 PERF_RATIO = 0.85
-# ~2 kWh avg surplus / up to ~4–5 kWh summer harvest per research
 BATTERY_KWH_PER_HOME = 5.0
 SFH_SHARE = 0.75
 APT_SHARE = 0.25
 JAM_HOURS = set(range(18, 23))
 CHARGE_HOURS = set(range(10, 17))
-MORNING_DISCHARGE = set(range(3, 6))  # HE3–5 night trickle
-# ~85% jam (TOU peak) / ~15% HE3–5 non-peak baseline
+MORNING_DISCHARGE = set(range(3, 6))
 MORNING_SOC_FRAC = 0.15
-# Midday homes are often empty — only this fraction of adopting share is on-site
-# (calibrated ≈2 kWh/home·day surplus of ~5.3 kWh gen at intensity=1.0)
 DAYTIME_COINCIDENCE = 0.10
 
 APPLIANCE_FLEX_COLS = (
@@ -50,7 +51,7 @@ def plug_in_solar_mw(
     n_homes: float | None = None,
     kw_per_home: float = KW_PER_HOME,
 ) -> pd.Series:
-    """Plug-in solar MW for a home count (default full stock; callers pass SFH-only)."""
+    """Nameplate × irradiance → fleet MW (default 1.2 kW HB 340 AC array)."""
     homes = float(n_homes if n_homes is not None else IMPLIED_STOCK)
     adopting = homes * (adoption_pct / 100.0)
     sw = (
@@ -70,11 +71,12 @@ def apply_battery(
     *,
     n_homes: float,
     battery_kwh: float = BATTERY_KWH_PER_HOME,
+    battery_direct_mw: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, float, float, float, float]:
     """
-    HB 340: serve adopting-home load live; store surplus only; discharge same MWh.
+    4-panel AC array: live to load first; AC surplus → battery.
+    3-panel battery-direct array (optional): all kWh → battery (extra evening power).
     charge_mw.sum() == discharge_mw.sum() (yellow == purple).
-    Returns net, solar_to_load, charge, discharge, jam_mwh, he35_mwh, surplus_mwh, live_mwh.
     """
     adopt_frac = max(float(adoption_pct), 0.0) / 100.0
     adopting = n_homes * adopt_frac
@@ -82,29 +84,41 @@ def apply_battery(
     charge_mw = np.zeros_like(net_mw, dtype=float)
     solar_to_load = np.zeros_like(net_mw, dtype=float)
     surplus_raw = np.zeros_like(net_mw, dtype=float)
+    batt_direct = (
+        np.asarray(battery_direct_mw, dtype=float)
+        if battery_direct_mw is not None
+        else np.zeros_like(net_mw, dtype=float)
+    )
     soc = 0.0
 
-    # Daytime: live offset first; only excess charges the battery.
-    # Midday coincidence < 1 models empty-house baseload (research ~3.3 live / ~2.0 surplus).
     for i, h in enumerate(hours):
+        hi = int(h)
+        # Dedicated roof string → battery only (not on HB 340 AC plug).
+        direct = float(batt_direct[i]) if hi in CHARGE_HOURS else 0.0
+        if direct > 1e-12 and soc < capacity_mwh - 1e-9:
+            take_d = min(direct, capacity_mwh - soc)
+            if take_d > 1e-9:
+                charge_mw[i] += take_d
+                soc += take_d
+
         gen = float(solar_mw[i])
         if gen <= 1e-12:
             continue
-        coin = DAYTIME_COINCIDENCE if h in CHARGE_HOURS else 1.0
+        coin = DAYTIME_COINCIDENCE if hi in CHARGE_HOURS else 1.0
         adopting_load = max(float(net_mw[i]) * adopt_frac * coin, 0.0)
         live = min(gen, adopting_load)
         surplus = max(0.0, gen - live)
         surplus_raw[i] = surplus
-        if h in CHARGE_HOURS and surplus > 1e-9 and soc < capacity_mwh - 1e-9:
+        solar_to_load[i] = live
+        if hi in CHARGE_HOURS and surplus > 1e-9 and soc < capacity_mwh - 1e-9:
             take = min(surplus, capacity_mwh - soc)
             if take > 1e-9:
-                charge_mw[i] = take
+                charge_mw[i] += take
                 soc += take
-        solar_to_load[i] = live
 
     charged = float(charge_mw.sum())
     live_mwh = float(solar_to_load.sum())
-    surplus_mwh = float(surplus_raw.sum())
+    surplus_mwh = float(surplus_raw.sum() + batt_direct.sum())
     discharge = np.zeros_like(net_mw, dtype=float)
     jam_idx = [i for i, h in enumerate(hours) if h in JAM_HOURS]
     morn_idx = [i for i, h in enumerate(hours) if h in MORNING_DISCHARGE]
@@ -230,6 +244,7 @@ def apply_relief_stack(
                 "apt_mw_after": baseline * APT_SHARE,
                 "solar_mw": np.zeros_like(baseline),
                 "solar_to_load_mw": np.zeros_like(baseline),
+                "battery_direct_mw": np.zeros_like(baseline),
                 "battery_charge_mw": np.zeros_like(baseline),
                 "battery_discharge_mw": np.zeros_like(baseline),
             }
@@ -268,6 +283,8 @@ def apply_relief_stack(
                 "apt_share": APT_SHARE,
                 "solar_mwh": 0.0,
                 "solar_mwh_sfh_only": 0.0,
+                "battery_direct_mwh": 0.0,
+                "solar_total_mwh": 0.0,
                 "solar_to_load_mwh": 0.0,
                 "solar_live_mwh": 0.0,
                 "surplus_mwh": 0.0,
@@ -283,6 +300,7 @@ def apply_relief_stack(
                 "scale_homes": SCALE,
                 "implied_stock": IMPLIED_STOCK,
                 "kw_per_home": KW_PER_HOME,
+                "kw_battery_direct": 0.0,
                 "battery_kwh_per_home": 0.0,
             },
         )
@@ -348,8 +366,9 @@ def apply_relief_stack(
         apt_flexed = opt_a.hourly["wasatch_mw_after"].to_numpy(dtype=float)
         flex_apt = opt_a.metrics
 
-    # --- 2) SFH solar: adopting homes serve load from the panel, not the grid ---
+    # --- 2) SFH solar: 4-panel HB340 AC + optional 3-panel battery-direct ---
     solar = np.zeros_like(sfh_flexed)
+    batt_pv = np.zeros_like(sfh_flexed)
     discharge = np.zeros_like(sfh_flexed)
     charge_mw = np.zeros_like(sfh_flexed)
     adopt_frac = max(float(adoption_pct), 0.0) / 100.0
@@ -361,7 +380,9 @@ def apply_relief_stack(
 
     if do_solar:
         solar = (
-            plug_in_solar_mw(wx, adoption_pct, n_homes=sfh_homes)
+            plug_in_solar_mw(
+                wx, adoption_pct, n_homes=sfh_homes, kw_per_home=KW_PER_HOME
+            )
             .reindex(hours)
             .fillna(0.0)
             .to_numpy()
@@ -377,6 +398,15 @@ def apply_relief_stack(
         live_mwh = float(solar_to_load.sum())
 
     if do_battery:
+        # Extra 3 panels (~0.8 kW) → battery MPPTs; not counted on AC plug cap.
+        batt_pv = (
+            plug_in_solar_mw(
+                wx, adoption_pct, n_homes=sfh_homes, kw_per_home=KW_BATTERY_DIRECT
+            )
+            .reindex(hours)
+            .fillna(0.0)
+            .to_numpy()
+        )
         (
             sfh_after,
             solar_to_load,
@@ -387,7 +417,12 @@ def apply_relief_stack(
             surplus_mwh,
             live_mwh,
         ) = apply_battery(
-            sfh_flexed, solar, hours, adoption_pct, n_homes=sfh_homes
+            sfh_flexed,
+            solar,
+            hours,
+            adoption_pct,
+            n_homes=sfh_homes,
+            battery_direct_mw=batt_pv,
         )
     else:
         sfh_after = np.maximum(sfh_flexed - solar_to_load, 0.0)
@@ -410,6 +445,7 @@ def apply_relief_stack(
             "apt_mw_after": apt_after,
             "solar_mw": solar,
             "solar_to_load_mw": solar_to_load,
+            "battery_direct_mw": batt_pv,
             "battery_charge_mw": charge_mw,
             "battery_discharge_mw": discharge,
         }
@@ -468,6 +504,8 @@ def apply_relief_stack(
         "apt_share": APT_SHARE,
         "solar_mwh": float(solar.sum()),
         "solar_mwh_sfh_only": float(solar.sum()),
+        "battery_direct_mwh": float(batt_pv.sum()),
+        "solar_total_mwh": float(solar.sum() + batt_pv.sum()),
         "solar_to_load_mwh": float(np.asarray(solar_to_load).sum()),
         "solar_live_mwh": float(live_mwh),
         "surplus_mwh": float(surplus_mwh),
@@ -487,6 +525,7 @@ def apply_relief_stack(
         "scale_homes": SCALE,
         "implied_stock": IMPLIED_STOCK,
         "kw_per_home": KW_PER_HOME,
+        "kw_battery_direct": KW_BATTERY_DIRECT if use_battery else 0.0,
         "battery_kwh_per_home": BATTERY_KWH_PER_HOME if use_battery else 0.0,
     }
     return ReliefResult(hourly=hourly, metrics=metrics)

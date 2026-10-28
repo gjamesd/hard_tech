@@ -291,14 +291,19 @@ def main() -> None:
         min_value=0,
         max_value=60,
         value=50,
-        help="HB 340 ≤1.2 kW kits on SFH (~75% of Wasatch). Apts never get solar.",
+        help=(
+            "HB 340: 4 panels ≤1.2 kW → wall outlet on SFH (~75% of Wasatch). "
+            "Apts never get kits."
+        ),
     )
     use_battery = (
         st.sidebar.radio("Storage (SFH only)", ["No battery", "With battery"], index=1)
         == "With battery"
     )
     st.sidebar.caption(
-        "Flex works with solar at **0%**. Solar/battery = SFH only. "
+        "Flex works with solar at **0%**. "
+        "**With battery** adds 3 more panels (~0.8 kW) into the battery only "
+        "(EcoFlow-style) — more evening power, still ≤1.2 kW on the AC plug. "
         "Agent **proposes** windows — no live RMP control."
     )
 
@@ -665,9 +670,9 @@ def main() -> None:
         f"{metrics.get('battery_mwh_discharged', 0):.0f}",
     )
     d3.metric(
-        "Solar live / surplus",
+        "Solar live / batt-PV",
         f"{metrics.get('solar_live_mwh', metrics.get('solar_to_load_mwh', 0)):.0f} / "
-        f"{metrics.get('surplus_mwh', 0):.0f}",
+        f"{metrics.get('battery_direct_mwh', 0):.0f}",
     )
     if metrics.get("new_peak_created"):
         st.warning(
@@ -732,9 +737,22 @@ def main() -> None:
             go.Bar(
                 x=he,
                 y=rh["solar_to_load_mw"],
-                name="Solar → load (SFH)",
+                name="4-panel AC → load",
                 marker_color="#68d391",
                 opacity=0.45,
+            )
+        )
+    if (
+        "battery_direct_mw" in rh.columns
+        and float(rh["battery_direct_mw"].sum()) > 0
+    ):
+        fig_r.add_trace(
+            go.Bar(
+                x=he,
+                y=rh["battery_direct_mw"],
+                name="3-panel → battery",
+                marker_color="#d69e2e",
+                opacity=0.55,
             )
         )
     if "battery_charge_mw" in rh.columns and float(rh["battery_charge_mw"].sum()) > 0:
@@ -791,8 +809,9 @@ def main() -> None:
     )
     st.plotly_chart(fig_r, use_container_width=True)
     st.caption(
-        "Green band = demand off baseline. Green bars = SFH solar live. "
-        "Yellow/purple = battery surplus only (equal MWh)."
+        "Green band = demand off baseline. Green bars = 4-panel HB 340 → load. "
+        "Gold bars = extra 3 panels → battery only (not on the 1.2 kW AC cap). "
+        "Yellow/purple = battery charge/discharge (equal MWh) — more evening power with the kit."
     )
 
     if not scored.empty and not relief.hourly.empty:

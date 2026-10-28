@@ -83,7 +83,7 @@ def build_agent_plan(
             PlanStep(
                 asset="SFH plug-in solar (HB 340)",
                 action=(
-                    f"≤1.2 kW kits on {adoption_pct:.0f}% of SFH cut daytime grid draw. "
+                    f"4 panels ≤1.2 kW (HB 340) on {adoption_pct:.0f}% of SFH → wall outlet. "
                     "Apartments never get kits."
                 ),
             )
@@ -92,10 +92,11 @@ def build_agent_plan(
     if use_battery and adoption_pct > 0:
         steps.append(
             PlanStep(
-                asset="SFH battery",
+                asset="SFH battery + 3 DC panels",
                 action=(
-                    f"Store ~2 kWh/home·day surplus at noon; discharge into {jam} "
-                    "(and a light HE3–5 top-up). Charge MWh = discharge MWh."
+                    "Add ~0.8 kW (3 panels) straight into the battery MPPTs — not on the "
+                    f"1.2 kW AC cap — then discharge into {jam} (+ light HE3–5). "
+                    "More evening kWh than AC-surplus alone; charge MWh = discharge MWh."
                 ),
             )
         )
