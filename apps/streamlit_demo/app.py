@@ -635,9 +635,18 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+    evening_before = float(metrics.get("evening_mwh_before", 0) or 0)
+    evening_off = float(metrics.get("headline_mwh_off_rush", 0) or 0)
+    jam_cut_pct = (
+        100.0 * evening_off / evening_before if evening_before > 1e-9 else 0.0
+    )
     h1, h2, h3 = st.columns(3)
-    h1.metric("Evening MWh off rush", f"{metrics.get('headline_mwh_off_rush', 0):.0f}")
-    h2.metric("Peak cut", f"{metrics.get('peak_mw_cut', 0):.0f} MW")
+    h1.metric("Evening MWh off rush", f"{evening_off:.0f}")
+    h2.metric(
+        "Jam-hour demand cut",
+        f"{jam_cut_pct:.0f}%",
+        help="Share of Wasatch MWh removed inside BA jam hours (HE18–22), not daily max MW.",
+    )
     h3.metric(
         "Congestion avoided",
         f"{metrics.get('congestion_avoided', 0):.0f}",
@@ -778,11 +787,6 @@ def main() -> None:
                 opacity=0.75,
             )
         )
-    peak_cut_pct = (
-        100.0
-        * float(metrics.get("peak_mw_cut", 0))
-        / max(float(metrics.get("peak_mw_before", 1)), 1.0)
-    )
     fig_r.update_layout(
         height=360,
         margin=dict(l=10, r=10, t=10, b=10),
@@ -797,8 +801,8 @@ def main() -> None:
                 xref="paper",
                 yref="paper",
                 text=(
-                    f"Peak −{peak_cut_pct:.0f}% · "
-                    f"evening −{metrics.get('headline_mwh_off_rush', 0):.0f} MWh"
+                    f"Jam −{jam_cut_pct:.0f}% · "
+                    f"evening −{evening_off:.0f} MWh"
                 ),
                 showarrow=False,
                 align="right",
