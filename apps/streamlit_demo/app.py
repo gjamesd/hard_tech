@@ -366,8 +366,7 @@ def main() -> None:
     # --- Predicted Wasatch (always first — this is the day-ahead model) ---
     st.subheader("0 · Wasatch day-ahead prediction")
     st.caption(
-        "HistGradientBoosting on lagged Wasatch MW (1h…1 week) + Millcreek weather. "
-        "This is the residential forecast — not EIA."
+        "HistGradientBoosting on lagged Wasatch MW (1h…1 week) + Millcreek weather."
     )
     fig_pred = go.Figure()
     fig_pred.add_trace(
