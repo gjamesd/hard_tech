@@ -4,7 +4,7 @@
 
 Software that knows when PacifiCorp East (PACE) is jammed and keeps Wasatch residential flex out of the rush.
 
-**Live demo:** _add Streamlit Community Cloud URL after deploy_
+**Live demo:** [wasatch-grid-traffic.streamlit.app](https://wasatch-grid-traffic.streamlit.app) _(deploy via share.streamlit.io if 404)_
 
 ## Demo path (≈2 min)
 
